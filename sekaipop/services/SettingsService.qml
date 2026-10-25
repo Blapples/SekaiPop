@@ -187,7 +187,8 @@ Singleton {
         "overview.scale": 0,
         "overview.gap": -1,
         "dock.visible": true,
-        "dock.perMonitor": false,       // one dock on every monitor (off = one dock, on the first monitor)
+        "dock.perMonitor": false,       // one dock on every monitor (off = one dock, on dock.screen)
+        "dock.screen": "",              // the monitor the dock is on when it is not on every monitor (name, e.g. "HDMI-A-1"; empty = the first one)
         "dock.position": "bottom",      // the edge the dock sits on: bottom | top | left | right
         "dock.style": "float",          // how the dock is drawn: float (the rounded, outlined pill) | transparent (no background: just the keys) | capsule (a fully rounded body in a thin rim)
         "dock.autoHide": false,         // (old switch, still counts as hideMode "auto")

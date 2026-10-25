@@ -600,9 +600,19 @@ ShellRoot {
             const every = SettingsService.flag("dock.perMonitor")
             const saved = SettingsService.get("dock.position")
             const pos = (saved === "left" || saved === "right" || saved === "top") ? saved : "bottom"
-            for (let i = 0; i < Quickshell.screens.length; i++) {
-                if (i > 0 && !every)
+            // With one dock, dock.screen (a monitor name, e.g. "HDMI-A-1") picks its monitor;
+            // empty or not connected = the first one.
+            const wantName = SettingsService.get("dock.screen")
+            let only = 0
+            for (let j = 0; j < Quickshell.screens.length; j++) {
+                if (Quickshell.screens[j].name === wantName) {
+                    only = j
                     break
+                }
+            }
+            for (let i = 0; i < Quickshell.screens.length; i++) {
+                if (!every && i !== only)
+                    continue
                 list.push({ screen: Quickshell.screens[i], position: pos, perMonitor: every,
                             afterBar: i < bars.instances.length ? bars.instances[i] : null })
             }
