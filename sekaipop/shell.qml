@@ -196,6 +196,10 @@ ShellRoot {
     // header comment for the exact hyprland.lua binds to add.
     OSDPopup {}
 
+    // "● REC" in the top-right corner while the screen is being recorded
+    // (RecordingIndicator.qml); click it to stop.
+    RecordingIndicator {}
+
     // The reload report (ReloadPopup.qml): "Shell reloaded" after a
     // successful reload, and a card with Quickshell's error text when a
     // reload fails (a QML syntax error, a bad import...). It replaces
