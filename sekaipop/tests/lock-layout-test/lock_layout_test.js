@@ -40,6 +40,9 @@ ok(/target: LockState[\s\S]{0,120}LockState\.locked[\s\S]{0,40}root\.refresh\(\)
 
 ok(/\+\+root\.failures < \d+\)\s*refetch\.restart\(\)/.test(service) && /root\.failures = 0/.test(service), "a failed read is retried a few times, and a good one resets the count");
 
+ok(/if \(fetch\.running\)\s*root\.again = true\s*else\s*fetch\.running = true/.test(service) && /onExited: \{\s*if \(root\.again\)/.test(service), "an ask while a read is running waits for it instead of killing it");
+ok(!/fetch\.running = false/.test(service), "a read is never cut short");
+
 // ---- the bar reads the service and no longer keeps a copy ----
 ok(/keyboardLayoutCode: KeyboardLayoutService\.code/.test(bar), "Bar: the pill shows the service's code");
 ok(/onKeyboardLayoutClicked: KeyboardLayoutService\.cycle\(\)/.test(bar), "Bar: a click cycles through the service");
@@ -50,13 +53,29 @@ ok(/readonly property string code: KeyboardLayoutService\.code/.test(tag), "tag 
 ok(/visible: root\.code !== ""/.test(tag), "tag hides itself when there is no code");
 ok(/text: root\.code/.test(tag), "tag says the code");
 ok(/import qs\.modules\.common/.test(tag), "tag imports Theme");
-ok(/onClicked: \{\s*KeyboardLayoutService\.cycle\(\)\s*root\.activated\(\)/.test(tag), "a click on the tag cycles the layout and says so");
+ok(/onClicked: \{\s*root\.toggle\(\)\s*root\.activated\(\)/.test(tag), "a click on the tag opens or closes the list and says so");
 ok(/cursorShape: Qt\.PointingHandCursor/.test(tag), "the tag looks clickable");
+ok(/model: KeyboardLayoutService\.layouts/.test(tag), "the list shows the service's layouts");
+ok(/KeyboardLayoutService\.select\(row\.modelData\.index\)\s*root\.open = false\s*root\.activated\(\)/.test(tag), "a row picks its layout, puts the list away and keeps the keyboard");
+ok(/parent: root\.overlay\s*anchors\.fill: parent\s*z: 998\s*visible: root\.open\s*onPressed: \{\s*root\.open = false/.test(tag), "a press anywhere else closes the list");
+ok(/parent: root\.overlay\s*z: 999/.test(tag), "the list is drawn in the look, above everything (a session lock cannot host a popup window)");
+ok(/onVisibleChanged: if \(!root\.visible\) root\.open = false/.test(tag), "a tag that hides takes its list with it");
+ok(!/PopupWindow|Popup \{/.test(tag), "no popup window on the lock surface");
+
+// ---- choosing a layout: by place in kb_layout, on every keyboard ----
+ok(/\["hyprctl", "switchxkblayout", "all", String\(index\)\]/.test(service), "select() goes to a layout by index on every keyboard");
+ok(/root\.activeIndex = kb\.active_layout_index \|\| 0/.test(service), "the active place comes from active_layout_index");
+ok(/root\.layoutIds = ids/.test(service), "the codes come from kb_layout");
+const settingsPage = read("modules/sekai/settings/SettingsPageHyprland.qml");
+ok(/commonLayouts: KeyboardLayoutService\.commonLayouts/.test(settingsPage), "the Hyprland page and the list share one catalogue of layout names");
+const names = [...service.matchAll(/\{ id: "(\w+)", label: "([^"]+)" \}/g)];
+ok(names.length === 15 && names[0][1] === "us" && names[0][2] === "English (US)", "the catalogue is the Hyprland page's fifteen");
 
 // ---- both lock looks carry it, on the password plate, and make room for it ----
 for (const [name, src, id] of [["LockSurface", gacha, "layoutTag"], ["LockCalendar", calendar, "calLayoutTag"]]) {
+    ok(new RegExp("id: " + id + "\\b\\s*overlay: root\\b").test(src), name + ": the tag's list is drawn in the look itself");
     ok(new RegExp("LockLayoutTag \\{\\s*id: " + id + "\\b").test(src), name + ": has the layout tag");
-    ok(new RegExp("id: " + id + "\\b[\\s\\S]{0,500}onActivated: root\\.forceActiveFocus\\(\\)").test(src), name + ": a click on the tag keeps the keyboard on the look");
+    ok(new RegExp("id: " + id + "\\b[\\s\\S]{0,900}onActivated: root\\.forceActiveFocus\\(\\)").test(src), name + ": a click on the tag keeps the keyboard on the look");
     ok(new RegExp(id + "\\.visible \\? " + id + "\\.width").test(src), name + ": the label gives the tag room when it shows");
     ok(new RegExp("x: parent\\.width - width - root\\.px\\(\\d+\\)").test(src.slice(src.indexOf("id: " + id))), name + ": the tag sits on the plate's right edge");
 }

@@ -20,16 +20,7 @@ SettingsPage {
     // ===== keyboard layouts =====
     // kb_layout is a comma list ("us,ru"); the first is the one you start on. The
     // bar's layout key (and the key combo below) switch between them.
-    readonly property var commonLayouts: [
-        { id: "us", label: "English (US)" }, { id: "gb", label: "English (UK)" },
-        { id: "ph", label: "Filipino" }, { id: "es", label: "Spanish" },
-        { id: "fr", label: "French" }, { id: "de", label: "German" },
-        { id: "it", label: "Italian" }, { id: "pt", label: "Portuguese" },
-        { id: "br", label: "Brazilian" }, { id: "ru", label: "Russian" },
-        { id: "ua", label: "Ukrainian" }, { id: "tr", label: "Turkish" },
-        { id: "jp", label: "Japanese" }, { id: "kr", label: "Korean" },
-        { id: "ara", label: "Arabic" }
-    ]
+    readonly property var commonLayouts: KeyboardLayoutService.commonLayouts
     readonly property var activeLayouts: HyprlandSettings.str("input.kb_layout", "us")
         .split(",").map(c => c.trim()).filter(c => c.length > 0)
     // The common ones, then any other layout that is already on (so it can be turned off).

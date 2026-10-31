@@ -909,6 +909,13 @@ Item {
                 // The keyboard layout you are typing in, at the end of the label's line.
                 LockLayoutTag {
                     id: calLayoutTag
+                    overlay: root
+                    panelColor: root.white
+                    inkColor: root.ink
+                    accentColor: root.mint
+                    shadowColor: root.ink
+                    shadowDy: root.shadowSmall
+                    panelRadius: root.px(18)
                     x: parent.width - width - root.px(20)
                     y: root.px(8)
                     fillColor: root.ink

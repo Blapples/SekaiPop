@@ -809,6 +809,13 @@ Item {
                     // The keyboard layout, a tag on the corner like the Unlock pill's "Enter".
                     LockLayoutTag {
                         id: layoutTag
+                        overlay: root
+                        panelColor: LockPalette.paper
+                        inkColor: LockPalette.cBorder
+                        accentColor: LockPalette.mint
+                        shadowColor: LockPalette.shadow
+                        shadowDy: root.px(6)
+                        panelRadius: root.px(26)
                         x: parent.width - width - root.px(14)
                         y: root.px(8)
                         fillColor: LockPalette.mint
