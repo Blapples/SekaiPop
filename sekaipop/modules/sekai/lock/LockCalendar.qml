@@ -873,7 +873,7 @@ Item {
                 Row {
                     x: root.px(20)
                     y: root.px(10)
-                    width: parent.width - root.px(40)
+                    width: parent.width - root.px(40) - (calLayoutTag.visible ? calLayoutTag.width + root.px(8) : 0)
                     spacing: root.px(6)
 
                     // Shown after PAM reports a fingerprint prompt.
@@ -904,6 +904,18 @@ Item {
                         font.styleName: Theme.fontStyleBold
                         font.letterSpacing: root.px(1)
                     }
+                }
+
+                // The keyboard layout you are typing in, at the end of the label's line.
+                LockLayoutTag {
+                    id: calLayoutTag
+                    x: parent.width - width - root.px(20)
+                    y: root.px(8)
+                    fillColor: root.ink
+                    textColor: root.white
+                    fontPixelSize: root.px(12)
+                    tagHeight: root.px(22)
+                    sidePadding: root.px(16)
                 }
 
                 // The dots sit in a pale well.

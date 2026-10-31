@@ -294,7 +294,7 @@ Item {
     property bool batteryLow: false
 
     // Keyboard layout code ("EN", "RU", ...), empty when there's only
-    // one layout configured (see Bar.qml's xkbLayoutCode).
+    // one layout configured (see KeyboardLayoutService.code).
     property string keyboardLayoutCode: ""
 
     // Fed by WeatherSource.qml via Bar.qml. "--" until the first fetch
