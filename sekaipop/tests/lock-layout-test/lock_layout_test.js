@@ -38,6 +38,8 @@ ok(/path\.indexOf\("input\.kb_"\) === 0/.test(service), "reads again after the H
 ok(/\["hyprctl", "switchxkblayout", "all", "next"\]/.test(service), "cycles every keyboard together");
 ok(/target: LockState[\s\S]{0,120}LockState\.locked[\s\S]{0,40}root\.refresh\(\)/.test(service), "reads again when the screen locks");
 
+ok(/\+\+root\.failures < \d+\)\s*refetch\.restart\(\)/.test(service) && /root\.failures = 0/.test(service), "a failed read is retried a few times, and a good one resets the count");
+
 // ---- the bar reads the service and no longer keeps a copy ----
 ok(/keyboardLayoutCode: KeyboardLayoutService\.code/.test(bar), "Bar: the pill shows the service's code");
 ok(/onKeyboardLayoutClicked: KeyboardLayoutService\.cycle\(\)/.test(bar), "Bar: a click cycles through the service");

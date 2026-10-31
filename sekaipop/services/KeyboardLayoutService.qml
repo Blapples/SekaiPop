@@ -38,6 +38,11 @@ Singleton {
         fetch.running = true
     }
 
+    // A read right as the shell starts can come back empty (seen once, at an install's
+    // restart), and nothing else would ask again until Hyprland sent an event. So a failed
+    // read is tried again a few times, not for ever: with no Hyprland (niri) it never works.
+    property int failures: 0
+
     Process {
         id: fetch
         running: true
@@ -52,8 +57,11 @@ Singleton {
                         root.layoutName = kb.active_keymap || ""
                         root.layoutCount = (kb.layout || "").split(",").filter(s => s.length > 0).length
                     }
+                    root.failures = 0
                 } catch (e) {
-                    console.warn("KeyboardLayoutService: couldn't parse `hyprctl -j devices` for keyboard layout")
+                    console.warn("KeyboardLayoutService: couldn't parse `hyprctl -j devices` for keyboard layout: " + e + " (got " + collector.text.length + " bytes)")
+                    if (++root.failures < 4)
+                        refetch.restart()
                 }
             }
         }
@@ -93,7 +101,7 @@ Singleton {
 
     Timer {
         id: refetch
-        interval: 400
+        interval: root.failures > 0 ? 2000 : 400
         onTriggered: root.refresh()
     }
 }
