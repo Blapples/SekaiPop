@@ -50,10 +50,13 @@ ok(/readonly property string code: KeyboardLayoutService\.code/.test(tag), "tag 
 ok(/visible: root\.code !== ""/.test(tag), "tag hides itself when there is no code");
 ok(/text: root\.code/.test(tag), "tag says the code");
 ok(/import qs\.modules\.common/.test(tag), "tag imports Theme");
+ok(/onClicked: \{\s*KeyboardLayoutService\.cycle\(\)\s*root\.activated\(\)/.test(tag), "a click on the tag cycles the layout and says so");
+ok(/cursorShape: Qt\.PointingHandCursor/.test(tag), "the tag looks clickable");
 
 // ---- both lock looks carry it, on the password plate, and make room for it ----
 for (const [name, src, id] of [["LockSurface", gacha, "layoutTag"], ["LockCalendar", calendar, "calLayoutTag"]]) {
     ok(new RegExp("LockLayoutTag \\{\\s*id: " + id + "\\b").test(src), name + ": has the layout tag");
+    ok(new RegExp("id: " + id + "\\b[\\s\\S]{0,500}onActivated: root\\.forceActiveFocus\\(\\)").test(src), name + ": a click on the tag keeps the keyboard on the look");
     ok(new RegExp(id + "\\.visible \\? " + id + "\\.width").test(src), name + ": the label gives the tag room when it shows");
     ok(new RegExp("x: parent\\.width - width - root\\.px\\(\\d+\\)").test(src.slice(src.indexOf("id: " + id))), name + ": the tag sits on the plate's right edge");
 }

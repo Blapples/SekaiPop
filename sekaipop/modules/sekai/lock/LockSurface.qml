@@ -816,6 +816,7 @@ Item {
                         fontPixelSize: root.px(18)
                         tagHeight: root.px(30)
                         sidePadding: root.px(26)
+                        onActivated: root.forceActiveFocus()
                     }
 
                     // The dark well: the typed dots sit in here.

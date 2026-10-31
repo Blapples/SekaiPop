@@ -916,6 +916,7 @@ Item {
                     fontPixelSize: root.px(12)
                     tagHeight: root.px(22)
                     sidePadding: root.px(16)
+                    onActivated: root.forceActiveFocus()
                 }
 
                 // The dots sit in a pale well.
