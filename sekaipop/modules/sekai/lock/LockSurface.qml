@@ -791,7 +791,9 @@ Item {
 
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        width: parent.width - root.px(48)
+                        // Leaves the same room on both sides for the layout tag, so the
+                        // text stays centred.
+                        width: parent.width - 2 * (layoutTag.visible ? layoutTag.width + root.px(28) : root.px(24))
                         y: root.px(12)
                         elide: Text.ElideRight
                         horizontalAlignment: Text.AlignHCenter
@@ -802,6 +804,26 @@ Item {
                         font.pixelSize: root.px(34)
                         font.weight: Font.ExtraBold
                         font.styleName: Theme.fontStyleBold
+                    }
+
+                    // The keyboard layout, a tag on the corner like the Unlock pill's "Enter".
+                    LockLayoutTag {
+                        id: layoutTag
+                        overlay: root
+                        panelColor: LockPalette.paper
+                        inkColor: LockPalette.cBorder
+                        accentColor: LockPalette.mint
+                        shadowColor: LockPalette.shadow
+                        shadowDy: root.px(6)
+                        panelRadius: root.px(26)
+                        x: parent.width - width - root.px(14)
+                        y: root.px(8)
+                        fillColor: LockPalette.mint
+                        textColor: LockPalette.cBorder
+                        fontPixelSize: root.px(18)
+                        tagHeight: root.px(30)
+                        sidePadding: root.px(26)
+                        onActivated: root.forceActiveFocus()
                     }
 
                     // The dark well: the typed dots sit in here.
