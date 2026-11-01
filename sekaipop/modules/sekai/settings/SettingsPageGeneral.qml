@@ -175,6 +175,14 @@ SettingsPage {
             onMoved: v => SettingsService.set("panel.hotDwell", v)
         }
 
+        SettingToggle {
+            icon: "ads_click"
+            label: "Peek first"
+            detail: SettingsService.flag("panel.hotPeek") ? "Edge shows the tip, click to open" : "OFF"
+            checked: SettingsService.flag("panel.hotPeek")
+            onToggled: SettingsService.toggle("panel.hotPeek")
+        }
+
         SettingSlider {
             width: page.halfWidth
             icon: "vertical_align_top"

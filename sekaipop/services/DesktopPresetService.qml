@@ -54,7 +54,7 @@ import "../modules/common/functions/Framing.js" as FR
 //               part and leaves yours alone. The dock's own named layouts (its right-click
 //               menu) are separate and are not part of a preset.
 //   phone       the Quick Panel phone's style (2.5D or flat 2D) and its panel settings: hot edge
-//               on / off, edge delay, type to search apps. They are Settings Panel keys, but
+//               on / off, edge delay, peek first, type to search apps. They are Settings Panel keys, but
 //               they sit in `keepExact` so an older preset can't reset them; this part is how a
 //               preset carries them. A preset saved before it existed has no `phone` part and
 //               leaves yours alone. (How much of the phone shows and the notification style
@@ -160,6 +160,7 @@ Singleton {
         "lock.lyrics",
         "panel.hotEdge",
         "panel.hotDwell",
+        "panel.hotPeek",
         "panel.typeToSearch",
         "quick.flat",
         "quick.phoneShadow",
@@ -298,6 +299,7 @@ Singleton {
             flat: SettingsService.flag("quick.flat"),
             hotEdge: SettingsService.flag("panel.hotEdge"),
             hotDwell: SettingsService.get("panel.hotDwell"),
+            hotPeek: SettingsService.flag("panel.hotPeek"),
             typeToSearch: SettingsService.flag("panel.typeToSearch")
         }
     }
@@ -311,6 +313,8 @@ Singleton {
             SettingsService.set("panel.hotEdge", p.hotEdge)
         if (typeof p.hotDwell === "number" && isFinite(p.hotDwell))
             SettingsService.set("panel.hotDwell", Math.max(40, Math.min(800, p.hotDwell)))
+        if (typeof p.hotPeek === "boolean")
+            SettingsService.set("panel.hotPeek", p.hotPeek)
         if (typeof p.typeToSearch === "boolean")
             SettingsService.set("panel.typeToSearch", p.typeToSearch)
     }
