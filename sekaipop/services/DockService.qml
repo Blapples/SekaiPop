@@ -105,8 +105,25 @@ Singleton {
     property var holders: ({})
     readonly property bool wanted: Object.keys(root.holders).length > 0
 
-    // Each dock that is in smart-hide mode holds a key while it is.
+    // Each dock that is in smart-hide mode holds a key while it is. The key is the
+    // dock window's own (newHoldKey), never one it shares with another dock: keyed by
+    // monitor, a dock rebuilt on the same monitor (the shell builds it twice at startup)
+    // found the key already held and skipped its own claim, and the old dock let go of it
+    // on its way out. With nobody holding, the window list was never asked for again and
+    // window events were ignored, so Smart hide stayed on whatever it had last seen, or on
+    // nothing at all: the dock stood over a maximized window (issue #116).
+    property int keysGiven: 0
+
+    // A key for a new holder, unique for the life of the shell. Call it once, when the
+    // holder is built (not from a binding: it counts up).
+    function newHoldKey(prefix) {
+        root.keysGiven += 1
+        return prefix + "#" + root.keysGiven
+    }
+
     function hold(key, on) {
+        if (!key)
+            return
         const has = key in root.holders
         if (has === on)
             return
