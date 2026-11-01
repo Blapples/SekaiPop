@@ -28,9 +28,13 @@ assert.ok(/readonly property real alertLift: liftShowing\(204, root\.alertMargin
 assert.ok(/if \(root\.hotPeek\)\s+root\.peekOn\(hot\.modelData\)\s+else\s+root\.openOn\(hot\.modelData\)/.test(src), "the edge peeks only with the setting on")
 assert.ok(/onHoveredChanged: \{\s+root\.hotHovering = hovered/.test(src), "the strip's hover holds the peek")
 assert.ok(/TapHandler \{\s+enabled: root\.peekUp && !root\.open\s+onTapped: root\.claimPeek\(\)/.test(src), "a click on the strip opens it too")
-const touch = src.slice(src.indexOf("id: peekTouch"), src.indexOf("onPressed: root.claimPeek()") + 30)
+const touch = src.slice(src.indexOf("id: peekTouch"), src.indexOf("onReleased: root.claimPeek()") + 30)
 assert.ok(touch.length > 30 && /z: 1000/.test(touch) && /enabled: root\.peekUp && !root\.open/.test(touch) && /hoverEnabled: true/.test(touch),
           "the tip takes every press over the face under it, only while peeking")
+// Opening on the press disabled the area mid-delivery and the press fell through to the
+// banner, whose click opened the picture chooser.
+assert.ok(/onPressed: mouse => mouse\.accepted = true\s+onReleased: root\.claimPeek\(\)/.test(touch), "the tip opens on the release")
+assert.ok(!/onPressed:[^\n]*claimPeek/.test(src), "nothing opens the peek on the press")
 assert.ok(/running: root\.peekUp && !root\.open && !root\.hotHovering && !peekTouch\.containsMouse\s+onTriggered: root\.peekUp = false/.test(src),
           "it drops once the mouse is off the tip and the strip")
 assert.ok(/onOpenChanged: \{[\s\S]{0,600}peekUp = false\s+peekMode = false/.test(src), "opening ends the peek")
