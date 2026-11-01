@@ -25,7 +25,10 @@ import qs.modules.sekai.settings
 //   - a keybind, e.g. SUPER + N — bind it to the command
 //         qs -c sekaipop ipc call quickpanel toggle
 //     (also `show` and `hide`); pressing it again closes the panel
-//   - push the mouse into the bottom-center of the screen (the hot edge)
+//   - push the mouse into the bottom-center of the screen (the hot edge).
+//     With "Peek first" on (panel.hotPeek) the hot edge only raises the tip of
+//     the phone (the clock and date, see peekUp); a click on it brings the
+//     whole phone up, and moving the mouse off it lets it drop again.
 //   - click the notification bell in the bar (Bar.qml -> toggleOn)
 //
 // Ways to close it (however it was opened):
@@ -258,9 +261,24 @@ Scope {
     // from alertUp so the phone doesn't jump up while it's leaving.
     property bool alertMode: false
 
-    // The phone is up, for either reason. QuickSource follows this so the
+    // Raised by the hot edge with "Peek first" on (panel.hotPeek): only the tip
+    // of the phone shows (win.peekLift), so a pointer that strays to the bottom of
+    // the screen doesn't throw the whole phone up. A click on it is a normal
+    // `open` (claimPeek); leaving it alone lowers it again (peekLeave). Like
+    // alertUp it takes neither the keyboard nor the click-away grab.
+    property bool peekUp: false
+
+    // The low resting spot while peeking, kept apart from peekUp for the same
+    // reason as alertMode: the phone doesn't jump up while it's leaving.
+    property bool peekMode: false
+
+    // How far below its usual spot the phone rests: the alert's low spot, the
+    // peek's lower one, or 0 for the normal panel (stage.rise, hitRect, the rail).
+    readonly property real lowLift: alertMode ? win.alertLift : (peekMode ? win.peekLift : 0)
+
+    // The phone is up, for any of those reasons. QuickSource follows this so the
     // tiles are fresh whenever it's showing.
-    readonly property bool up: open || alertUp
+    readonly property bool up: open || alertUp || peekUp
 
     property var targetScreen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
 
@@ -276,6 +294,17 @@ Scope {
     property real hotWidth: 360
     property real hotHeight: 4
     property int hotDwell: SettingsService.get("panel.hotDwell")
+    // Peek first (Settings -> General -> Quick Panel): the hot edge raises only the
+    // tip of the phone, and a click brings the rest. Off by default.
+    property bool hotPeek: SettingsService.flag("panel.hotPeek")
+    // How far down the phone's face the peek shows, in design units: through
+    // the clock and date (QuickPanelFace draws them at y 36..~90).
+    property real peekTipY: 96
+    // How long (ms) the peek waits with the mouse off both it and the hot
+    // edge before it drops: enough to cross from the edge strip onto the tip.
+    property int peekLeaveMs: 450
+    // The mouse is in a hot edge strip right now (any screen's).
+    property bool hotHovering: false
 
     // How much of the phone shows when it's up, as a fraction of its
     // height: 1 = all of it, 0.76 = the top three quarters or so, with the
@@ -412,6 +441,7 @@ Scope {
 
     function close() {
         alertUp = false
+        peekUp = false
         turningBack = false
         open = false
         closeSettings()
@@ -607,6 +637,14 @@ Scope {
     // up if it's down, then buzz. The card itself is driven straight off
     // the source's toast / toastActive (see the panelFace bindings).
     function alert() {
+        // Only the tip is up: it becomes the alert's phone, which rises a bit
+        // further to show the card. alertUp first, so `up` never drops.
+        if (peekUp && !open) {
+            alertMode = true
+            alertUp = true
+            peekMode = false
+            peekUp = false
+        }
         const wasUp = up
         if (!wasUp) {
             targetScreen = focusedScreen()
@@ -623,6 +661,34 @@ Scope {
     function claim() {
         if (alertUp && !open)
             open = true
+    }
+
+    // The hot edge with "Peek first" on: bring up just the tip, unless the phone
+    // is already up for some other reason (then it is left as it is).
+    function peekOn(screen) {
+        if (up || settingsOpen)
+            return
+        stopRing()
+        if (screen)
+            targetScreen = screen
+        // Before peekUp, so the first frame is already the low spot (see alert()).
+        peekMode = true
+        peekUp = true
+    }
+
+    // A click on the peeking tip: the whole phone, as a normal open.
+    function claimPeek() {
+        if (peekUp && !open)
+            open = true
+    }
+
+    // The peek drops once the mouse has been off both it and the hot edge for a
+    // moment (the gap is crossing from the edge strip onto the tip).
+    Timer {
+        id: peekLeave
+        interval: root.peekLeaveMs
+        running: root.peekUp && !root.open && !root.hotHovering && !peekTouch.containsMouse
+        onTriggered: root.peekUp = false
     }
 
     // Clicking the bell on the monitor it's already open on closes it;
@@ -959,6 +1025,8 @@ Scope {
         if (open) {
             focusTimer.restart()
             alertUp = false
+            peekUp = false
+            peekMode = false
             // Slides the phone up from the low alert spot to its full
             // resting spot (stage.rise animates back to 0).
             alertMode = false
@@ -1753,6 +1821,7 @@ Scope {
 
                 HoverHandler {
                     onHoveredChanged: {
+                        root.hotHovering = hovered
                         if (!hovered) {
                             hot.armed = true
                             dwell.stop()
@@ -1770,8 +1839,18 @@ Scope {
                 interval: Math.max(1, root.hotDwell)
                 onTriggered: {
                     hot.armed = false
-                    root.openOn(hot.modelData)
+                    if (root.hotPeek)
+                        root.peekOn(hot.modelData)
+                    else
+                        root.openOn(hot.modelData)
                 }
+            }
+
+            // A click on the strip while the tip is peeking out over it opens
+            // the phone too (whichever of the two windows is on top there).
+            TapHandler {
+                enabled: root.peekUp && !root.open
+                onTapped: root.claimPeek()
             }
         }
     }
@@ -2078,14 +2157,23 @@ Scope {
         // corner land lower on the monitor than the right one, so the
         // lower of the two is what has to clear the screen edge. Static
         // pose, same reason as faceCutoffAt above.
-        readonly property real alertLift: {
+        readonly property real alertLift: liftShowing(204, root.alertMargin * uiScale)
+
+        // The same for the hot edge's peek (root.peekUp): only down to
+        // root.peekTipY of the face shows, the clock and date.
+        readonly property real peekLift: liftShowing(root.peekTipY, 0)
+
+        // How far down the phone rests so that its face shows down to design
+        // y `faceY` (across the alert card's width, x 47..607), plus `margin`
+        // px on screen.
+        function liftShowing(faceY, margin) {
             const m = PM.baseFor(phone.faceWidth, phone.faceHeight, phone.thickness,
                                  phone.yaw, phone.pitch, phone.roll,
                                  phone.perspective, phone.pose)
             let low = 0
             for (const x of [47, 607])
-                low = Math.max(low, PM.apply(m, x, 204, 0).y)
-            return Math.max(0, shownHeight - (low * fit + root.alertMargin * uiScale))
+                low = Math.max(low, PM.apply(m, x, faceY, 0).y)
+            return Math.max(0, shownHeight - (low * fit + margin))
         }
 
         // Nothing left to see: forget the low alert spot so the next
@@ -2093,6 +2181,7 @@ Scope {
         onVisibleChanged: {
             if (!visible) {
                 root.alertMode = false
+                root.peekMode = false
                 // Gone: the next time it comes up it is Quick again, with an empty
                 // search box.
                 routeAnim.stop()
@@ -2267,7 +2356,7 @@ Scope {
             // notification. Animated (only while it's on screen) so
             // touching the alert phone slides it up to the full panel;
             // while hidden it just snaps.
-            property real rise: root.alertMode ? win.alertLift : 0
+            property real rise: root.lowLift
             Behavior on rise {
                 enabled: win.visible
                 NumberAnimation {
@@ -2376,7 +2465,7 @@ Scope {
             // there still reach the windows underneath.
             Item {
                 id: hitRect
-                readonly property real drop: root.alertMode ? win.alertLift : 0
+                readonly property real drop: root.lowLift
                 x: restRect.x
                 y: restRect.y + drop
                 // (The side buttons stand out of the right edge, past the padded box
@@ -2415,6 +2504,24 @@ Scope {
                     console.log("sekaipop click-away: pressed beside the phone, inside its box")
                     root.close()
                 }
+            }
+
+            // The peeking tip (root.peekUp): over everything on it, so a click
+            // opens the phone instead of pressing a tile you can barely see, and
+            // its hover keeps the peek up (peekLeave).
+            MouseArea {
+                id: peekTouch
+
+                x: hitRect.x
+                y: hitRect.y
+                width: hitRect.width
+                height: hitRect.height
+                z: 1000
+                enabled: root.peekUp && !root.open
+                hoverEnabled: true
+                acceptedButtons: Qt.AllButtons
+                cursorShape: Qt.PointingHandCursor
+                onPressed: root.claimPeek()
             }
 
             // Where the Settings phone stands when it's up, in the middle of the
@@ -2830,7 +2937,7 @@ Scope {
                     // the bounce moves away from.
                     x: win.railMinX * win.fit
                     y: win.railMinY * win.fit - root.bounce * win.fit
-                       + (root.alertMode ? win.alertLift : 0)
+                       + root.lowLift
                     width: stage.quickInput ? (win.railMaxX - win.railMinX) * win.fit : 0
                     height: stage.quickInput ? (win.railMaxY - win.railMinY) * win.fit + root.bounce * win.fit * 2 : 0
                 }

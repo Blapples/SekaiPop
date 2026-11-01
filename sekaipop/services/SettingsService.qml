@@ -82,6 +82,8 @@ Singleton {
         "battery.alerts": true,
         "panel.hotEdge": true,
         "panel.hotDwell": 140,
+        // The hot edge raises only the tip of the Quick Panel phone (its clock and date); a click on it brings the whole phone up, and moving the mouse away lowers it. Off = the hot edge opens the whole phone at once.
+        "panel.hotPeek": false,
         "panel.peek": 76,
         // The Quick Panel phone drawn flat (2D: no tilt, no side wall, buttons cast their shadow straight down like the bar's pills) instead of the 2.5D pose.
         "quick.flat": false,

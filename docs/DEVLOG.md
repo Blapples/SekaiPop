@@ -4,6 +4,14 @@ The detailed notes written while SekaiPop was built: what each change touched, w
 and what was only read through, and how to check it. The short release notes are in
 `sekaipop/CHANGELOG.md`.
 
+## Unreleased — Peek first: the hot edge shows only the tip of the phone
+
+**Not yet seen on screen before this entry** (the owner asked for it after opening the phone by mistake with the mouse at the bottom of the screen). Checked: `tests/hot-peek-test/hot_peek_test.js` (new: the setting, its toggle and preset part, the wiring as text, and `peekOn` / `claimPeek` / `close` / `alert` run against a fake root) passes, and fails when the default is flipped on purpose; `notify-alert-test` and `phone-test/click_away_test.js`, which read the same file, pass; `qmllint` passes `SettingsPageGeneral.qml` and exits 255 with no message on `QuickPanel.qml`, as it does on `main`.
+
+- `panel.hotPeek` (off by default), Settings > General > Quick Panel > Peek first, carried by a preset's `phone` part like the other hot edge keys.
+- `QuickPanel.qml`: `peekUp` / `peekMode` beside `alertUp` / `alertMode`, `root.lowLift` for whichever low spot applies, `win.liftShowing()` shared by the alert's spot and the peek's (`peekTipY` 96, the clock and date), `peekTouch` over the tip, the strip's `TapHandler` and `hotHovering`, the `peekLeave` timer. A notification during a peek turns it into the alert phone.
+- docs/HOT-EDGE-PEEK.md is the account.
+
 ## Unreleased — Keyboard layout on the lockscreen (issue #110)
 
 **Not run on a live lockscreen** (the owner ran the first versions on theirs: the tag shows, a display-only tag could not be changed). The desktop it was written on has one keyboard layout (so the tag is hidden there by design), and locking the session from an agent is not something to try on the owner's session. Checked: `tests/lock-layout-test/lock_layout_test.js` (new, 28 checks: the code expression cut out of the service and run, the service's events, the bar reading the service, the tag in both looks) passes and fails when the tag's `visible` rule is broken on purpose; `tests/theme-import-test`, `tests/bar-tip-test`, `tests/keyboard-test` and the other lock tests pass, except `lock-calendar-test/calendar_source_test.js`, `lock-wallpaper-test/lock_wallpaper_unit.js` and `capsule-test/capsule_source_test.js`, which fail the same way on `main`; `qmllint` reports no error for the new service, the tag, both lock looks and `Bar.qml`. `hyprctl -j devices` was read on this machine to check the shape the service parses (`main`, `layout`, `active_keymap`).
