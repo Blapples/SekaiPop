@@ -2509,6 +2509,11 @@ Scope {
             // The peeking tip (root.peekUp): over everything on it, so a click
             // opens the phone instead of pressing a tile you can barely see, and
             // its hover keeps the peek up (peekLeave).
+            // It opens on the release, never the press: opening disables this
+            // area, and an area disabled while its press is being delivered lets
+            // that same press go on to what is under it (the banner, whose click
+            // opened the picture chooser). By the release the press is spent, so
+            // nothing under it ever sees a click.
             MouseArea {
                 id: peekTouch
 
@@ -2521,7 +2526,8 @@ Scope {
                 hoverEnabled: true
                 acceptedButtons: Qt.AllButtons
                 cursorShape: Qt.PointingHandCursor
-                onPressed: root.claimPeek()
+                onPressed: mouse => mouse.accepted = true
+                onReleased: root.claimPeek()
             }
 
             // Where the Settings phone stands when it's up, in the middle of the

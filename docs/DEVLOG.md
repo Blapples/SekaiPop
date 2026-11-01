@@ -11,6 +11,7 @@ and what was only read through, and how to check it. The short release notes are
 - `panel.hotPeek` (off by default), Settings > General > Quick Panel > Peek first, carried by a preset's `phone` part like the other hot edge keys.
 - `QuickPanel.qml`: `peekUp` / `peekMode` beside `alertUp` / `alertMode`, `root.lowLift` for whichever low spot applies, `win.liftShowing()` shared by the alert's spot and the peek's (`peekTipY` 96, the clock and date), `peekTouch` over the tip, the strip's `TapHandler` and `hotHovering`, the `peekLeave` timer. A notification during a peek turns it into the alert phone.
 - docs/HOT-EDGE-PEEK.md is the account.
+- Found by the owner on the live shell: a click on the tip opened the picture chooser. `peekTouch` opened the phone in `onPressed`; that disabled it while the press was still being delivered, and the press went on to the banner's MouseArea underneath, whose click picks a new banner. It now takes the press and opens on the release; the test checks that nothing opens the peek on a press.
 
 ## Unreleased — Keyboard layout on the lockscreen (issue #110)
 

@@ -31,7 +31,10 @@ It is the notification alert's low spot used a second time. `QuickPanel.qml`:
   `peekTipY`, 96 (under the clock and date).
 - `peekTouch`, a MouseArea over `hitRect` on top of everything on the phone, takes every press
   while peeking (so a click opens the phone and never presses a tile you can barely see) and
-  reports the hover that keeps the peek up. The strip's own `TapHandler` does the same for a
+  reports the hover that keeps the peek up. It opens on the **release**, not the press:
+  opening disables it, and a MouseArea disabled while its own press is being delivered lets
+  that press carry on to what is under it. The first version opened on the press, and the
+  click landed on the banner, which opened the picture chooser. The strip's own `TapHandler` does the same for a
   click on the strip, whichever of the two windows is on top there.
 - `peekLeave` runs while peeking with the mouse off both `peekTouch` and every strip
   (`hotHovering`), and lowers it when it fires.
