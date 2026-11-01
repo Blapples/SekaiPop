@@ -29,13 +29,21 @@ It is the notification alert's low spot used a second time. `QuickPanel.qml`:
 - `win.liftShowing(faceY, margin)` works out either spot: how far down the phone rests so its
   face shows down to design y `faceY`. The alert asks for 204 (under its card), the peek for
   `peekTipY`, 96 (under the clock and date).
-- `peekTouch`, a MouseArea over `hitRect` on top of everything on the phone, takes every press
-  while peeking (so a click opens the phone and never presses a tile you can barely see) and
-  reports the hover that keeps the peek up. It opens on the **release**, not the press:
-  opening disables it, and a MouseArea disabled while its own press is being delivered lets
-  that press carry on to what is under it. The first version opened on the press, and the
-  click landed on the banner, which opened the picture chooser. The strip's own `TapHandler` does the same for a
-  click on the strip, whichever of the two windows is on top there.
+- `root.peeking` (`peekMode && !open`) is true for as long as the phone on screen is a peek: rising,
+  up, or dropping. The phone takes no input then (its `enabled`), so nothing on the face can be
+  clicked.
+- `peekTouch`, a MouseArea over the whole window on top of everything, is on while `peeking`. Any
+  press the window takes then opens the phone (`claimPeek`), wherever it lands, and its hover
+  keeps the peek up. Hovering a tip that is already dropping brings it back up. The strip's own
+  `TapHandler` does the same for a click on the strip, whichever of the two windows is on top there.
+- It opens on the **release**, not the press: opening disables it, and a MouseArea disabled while
+  its own press is being delivered lets that press carry on to what is under it.
+
+Two earlier versions let clicks through to the banner (whose click opens the picture chooser),
+found on the owner's shell with a debug log. The first opened on the press, as above. The second
+covered only the phone's resting box and was on only while the peek was up. But the window also
+takes the mouse above that box while the phone bounces up (`railHost`), and the face took clicks
+again as soon as the peek began to drop. Hence the whole window, and `peeking` rather than `peekUp`.
 - `peekLeave` runs while peeking with the mouse off both `peekTouch` and every strip
   (`hotHovering`), and lowers it when it fires.
 - A notification arriving while the tip is up turns the peek into the alert phone (`alert()`):

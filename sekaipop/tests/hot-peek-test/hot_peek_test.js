@@ -27,14 +27,19 @@ assert.ok(/readonly property real peekLift: liftShowing\(root\.peekTipY, 0\)/.te
 assert.ok(/readonly property real alertLift: liftShowing\(204, root\.alertMargin \* uiScale\)/.test(src), "the alert's spot is unchanged")
 assert.ok(/if \(root\.hotPeek\)\s+root\.peekOn\(hot\.modelData\)\s+else\s+root\.openOn\(hot\.modelData\)/.test(src), "the edge peeks only with the setting on")
 assert.ok(/onHoveredChanged: \{\s+root\.hotHovering = hovered/.test(src), "the strip's hover holds the peek")
-assert.ok(/TapHandler \{\s+enabled: root\.peekUp && !root\.open\s+onTapped: root\.claimPeek\(\)/.test(src), "a click on the strip opens it too")
+assert.ok(/TapHandler \{\s+enabled: root\.peeking\s+onTapped: root\.claimPeek\(\)/.test(src), "a click on the strip opens it too")
+assert.ok(/readonly property bool peeking: peekMode && !open/.test(src), "a peek, up or dropping")
 const touch = src.slice(src.indexOf("id: peekTouch"), src.indexOf("onReleased: root.claimPeek()") + 30)
-assert.ok(touch.length > 30 && /z: 1000/.test(touch) && /enabled: root\.peekUp && !root\.open/.test(touch) && /hoverEnabled: true/.test(touch),
-          "the tip takes every press over the face under it, only while peeking")
+assert.ok(touch.length > 30 && /anchors\.fill: parent/.test(touch) && /z: 1000/.test(touch) && /enabled: root\.peeking/.test(touch) && /hoverEnabled: true/.test(touch),
+          "the whole window takes every press while it is a peek, not just the resting box")
 // Opening on the press disabled the area mid-delivery and the press fell through to the
 // banner, whose click opened the picture chooser.
 assert.ok(/onPressed: mouse => mouse\.accepted = true\s+onReleased: root\.claimPeek\(\)/.test(touch), "the tip opens on the release")
 assert.ok(!/onPressed:[^\n]*claimPeek/.test(src), "nothing opens the peek on the press")
+// The phone itself takes no click while it is a peek: one during the pull-out, the bounce or
+// the drop landed on the banner.
+assert.ok(/enabled: stage\.flip === 0 && !stage\.flipping && !root\.peeking/.test(src), "the phone is inert while peeking")
+assert.ok(/if \(containsMouse && root\.peeking && !root\.peekUp\)\s+root\.peekUp = true/.test(src.slice(src.indexOf("id: peekTouch"), src.indexOf("id: peekTouch") + 2000)), "hovering a dropping tip brings it back")
 assert.ok(/running: root\.peekUp && !root\.open && !root\.hotHovering && !peekTouch\.containsMouse\s+onTriggered: root\.peekUp = false/.test(src),
           "it drops once the mouse is off the tip and the strip")
 assert.ok(/onOpenChanged: \{[\s\S]{0,600}peekUp = false\s+peekMode = false/.test(src), "opening ends the peek")
@@ -53,6 +58,7 @@ function makeRoot() {
                 settingsOpen: false, targetScreen: "A", rings: 0, turningBack: false,
                 buzzRiseMs: 700, buzzTimer: { restart() {} }, closed: 0 }
     Object.defineProperty(r, "up", { get() { return this.open || this.alertUp || this.peekUp } })
+    Object.defineProperty(r, "peeking", { get() { return this.peekMode && !this.open } })
     r.stopRing = () => r.rings++
     r.focusedScreen = () => "F"
     r.closeSettings = () => r.closed++
@@ -79,6 +85,11 @@ assert.ok(!r.peekUp, "standalone Settings are left alone")
 r = makeRoot()
 r.claimPeek()
 assert.ok(!r.open, "nothing to claim without a peek")
+r = makeRoot()
+r.peekOn("B")
+r.peekUp = false
+r.claimPeek()
+assert.ok(r.open, "a click on a dropping tip opens it")
 r = makeRoot()
 r.peekOn("B")
 r.close()

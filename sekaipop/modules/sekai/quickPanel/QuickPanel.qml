@@ -272,6 +272,11 @@ Scope {
     // reason as alertMode: the phone doesn't jump up while it's leaving.
     property bool peekMode: false
 
+    // The phone on screen is a peek: up as one, or on its way down from one. Nothing
+    // on it takes a click then (only peekTouch, which opens it), so a click during
+    // the pull-out, the bounce or the drop can never land on the banner or a tile.
+    readonly property bool peeking: peekMode && !open
+
     // How far below its usual spot the phone rests: the alert's low spot, the
     // peek's lower one, or 0 for the normal panel (stage.rise, hitRect, the rail).
     readonly property real lowLift: alertMode ? win.alertLift : (peekMode ? win.peekLift : 0)
@@ -676,9 +681,10 @@ Scope {
         peekUp = true
     }
 
-    // A click on the peeking tip: the whole phone, as a normal open.
+    // A click on the peeking tip: the whole phone, as a normal open. Also while it
+    // is dropping: it comes back up as the full phone.
     function claimPeek() {
-        if (peekUp && !open)
+        if (peeking)
             open = true
     }
 
@@ -1849,7 +1855,7 @@ Scope {
             // A click on the strip while the tip is peeking out over it opens
             // the phone too (whichever of the two windows is on top there).
             TapHandler {
-                enabled: root.peekUp && !root.open
+                enabled: root.peeking
                 onTapped: root.claimPeek()
             }
         }
@@ -2506,28 +2512,30 @@ Scope {
                 }
             }
 
-            // The peeking tip (root.peekUp): over everything on it, so a click
-            // opens the phone instead of pressing a tile you can barely see, and
-            // its hover keeps the peek up (peekLeave).
+            // The peeking tip (root.peeking): over the whole window, so every press
+            // the window takes while it is a peek opens the phone, wherever it lands:
+            // on the tip, or above it while the phone bounces up (the window takes
+            // the mouse there too, railHost), or on a tip that is dropping. The phone
+            // itself takes nothing meanwhile (its `enabled`). Its hover holds the
+            // peek up (peekLeave), and brings a dropping one back.
             // It opens on the release, never the press: opening disables this
             // area, and an area disabled while its press is being delivered lets
-            // that same press go on to what is under it (the banner, whose click
-            // opened the picture chooser). By the release the press is spent, so
-            // nothing under it ever sees a click.
+            // that same press go on to what is under it.
             MouseArea {
                 id: peekTouch
 
-                x: hitRect.x
-                y: hitRect.y
-                width: hitRect.width
-                height: hitRect.height
+                anchors.fill: parent
                 z: 1000
-                enabled: root.peekUp && !root.open
+                enabled: root.peeking
                 hoverEnabled: true
                 acceptedButtons: Qt.AllButtons
                 cursorShape: Qt.PointingHandCursor
                 onPressed: mouse => mouse.accepted = true
                 onReleased: root.claimPeek()
+                onContainsMouseChanged: {
+                    if (containsMouse && root.peeking && !root.peekUp)
+                        root.peekUp = true
+                }
             }
 
             // Where the Settings phone stands when it's up, in the middle of the
@@ -2586,7 +2594,7 @@ Scope {
                     // Gone once the Settings have taken its place.
                     opacity: stage.quickAlpha
                     visible: opacity > 0.001
-                    enabled: stage.flip === 0 && !stage.flipping
+                    enabled: stage.flip === 0 && !stage.flipping && !root.peeking
 
                     // Closed for a while: the phone gives its layer buffers back
                     // (PhoneBody `warm`); they are back before the first frame.
