@@ -4,6 +4,13 @@ The detailed notes written while SekaiPop was built: what each change touched, w
 and what was only read through, and how to check it. The short release notes are in
 `sekaipop/CHANGELOG.md`.
 
+## Unreleased — Dock: Smart hide from the start (issue #116)
+
+**Reproduced and checked in a nested Hyprland** (a throwaway compositor in a window, the shell from the checkout inside it with copies of the owner's config and state, no-op `pkill` / `systemctl` / `hypridle` / `gsettings` / `dconf` on `PATH` and no session bus; docs/DOCK-SMART-HIDE.md has the recipe). A debug log in a scratch copy showed it: two docks built on the one monitor at startup, the second's `hold` skipped (`had=true`), the first destroyed 54 ms later releasing `dock-WAYLAND-1`, then `wanted=false` on every Hyprland event. On `main` the dock then stayed hidden after the maximized window was floated out of the way (the first answer had come back in time there); the reporter's case is the same stale state the other way round, when the first answer comes too late. With the fix: `wanted=true` after the destruction, `covered false` / `revealed true` when the window moved away (dock seen on the nested screen), `covered true` / `revealed false` when it was maximized again. Checked: `tests/dock-test/smart_hide_hold_test.js` (new; fails on `main`), the other dock tests pass.
+
+- `DockService.newHoldKey(prefix)`: a key per holder, given once; `hold` ignores an empty key.
+- `Dock.qml`: `holdKey` is set in `Component.onCompleted`, not a binding on the monitor's name (which also left a stale `dock-` key held when the screen arrived after the first hold).
+
 ## Unreleased — Peek first: the hot edge shows only the tip of the phone
 
 **Not yet seen on screen before this entry** (the owner asked for it after opening the phone by mistake with the mouse at the bottom of the screen). Checked: `tests/hot-peek-test/hot_peek_test.js` (new: the setting, its toggle and preset part, the wiring as text, and `peekOn` / `claimPeek` / `close` / `alert` run against a fake root) passes, and fails when the default is flipped on purpose; `notify-alert-test` and `phone-test/click_away_test.js`, which read the same file, pass; `qmllint` passes `SettingsPageGeneral.qml` and exits 255 with no message on `QuickPanel.qml`, as it does on `main`.

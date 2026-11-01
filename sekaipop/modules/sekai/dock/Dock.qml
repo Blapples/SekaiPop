@@ -1362,8 +1362,12 @@ PanelWindow {
     }
     readonly property bool wantsHidden: dockWindow.hideMode === "auto" || dockWindow.smartCovered || dockWindow.smartWaiting
 
-    // The geometry feed (hyprctl) only runs while some dock is in smart-hide mode.
-    readonly property string holdKey: "dock-" + (dockWindow.screen ? dockWindow.screen.name : "")
+    // The geometry feed (hyprctl) only runs while some dock is in smart-hide mode. Each
+    // dock window holds it with a key of its own, given once when it is built
+    // (Component.onCompleted): a key per monitor was shared by the two docks the shell
+    // builds on one monitor at startup, and the one going away released it for both
+    // (issue #116, DockService.hold).
+    property string holdKey: ""
     onSmartOnChanged: DockService.hold(dockWindow.holdKey, dockWindow.smartOn)
 
     // The gap under the pill, in design pixels, kept INSIDE the window while a hide
@@ -1614,6 +1618,7 @@ PanelWindow {
     Component.onCompleted: {
         dockWindow.reportRegion()
         dockWindow.refreshAutoSlots()
+        dockWindow.holdKey = DockService.newHoldKey("dock")
         DockService.hold(dockWindow.holdKey, dockWindow.smartOn)
         // A dock built later (another monitor, a preset swap) finds the list already there.
         if (DockService.ready)
