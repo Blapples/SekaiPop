@@ -124,10 +124,11 @@ PanelWindow {
     : win.stripSize) : 0
     // Auto would reserve the whole window: spell out the strip.
     exclusionMode: ExclusionMode.Normal
-    // The equalizer card has text fields (preset name, Last.fm key). A popup only
-    // gets the keyboard through its parent layer surface, which by default takes
-    // none: ask for it while the card is open (and only then).
-    WlrLayershell.keyboardFocus: win.eqPopupOpen ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    // The equalizer card and plugin popups have text fields. A popup only gets the
+    // keyboard through its parent layer surface, which by default takes none: ask
+    // for it while one of those cards is open (and only then).
+    WlrLayershell.keyboardFocus: (win.eqPopupOpen || win.pluginPopup !== "")
+        ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
     // Transparent style: the pills sit straight on the wallpaper, so the space
     // under (or beside) them should be small. Two things are taken off what the
     // bar reserves:
