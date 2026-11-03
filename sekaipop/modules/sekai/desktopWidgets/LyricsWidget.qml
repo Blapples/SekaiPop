@@ -59,8 +59,8 @@ import "../../common/functions/LyricsMath.js" as LM
 //
 // How the moving works: exactly like PaletteWidget.qml. ONE transparent window with the
 // card as an Item inside it. Dragging just moves that Item, so it stays smooth, and the
-// window's input `mask` is only the card (and nothing at all while Lock all is on), so
-// every click anywhere else passes straight through to whatever is underneath.
+// window's input `mask` is only the card, even while Lock all is on, so its
+// timing controls remain usable. Clicks outside the card pass through.
 //
 // Bind a key / call it from a script:
 //   qs -c sekaipop ipc call lyrics toggle          (show / hide)
@@ -239,23 +239,22 @@ PanelWindow {
     implicitWidth: win.boxW
     implicitHeight: win.boxH
 
-    // Only the card takes clicks (to be dragged); the rest of the screen falls through, and
-    // so does the card itself while Lock all is on and nothing is being edited.
+    // Keep the card interactive for its timing controls, even while locked.
+    // Dragging is gated separately; the rest of the screen stays click-through.
     mask: Region {
         item: cardMask
     }
 
     Item {
         id: cardMask
-        readonly property bool grab: EditMode.desktopDragAllowed || EditMode.active || chrome.selected
         readonly property real m: stage.editing ? 38 : 0
         readonly property real k: win.uiScale * stage.scale
         readonly property real x1: shifter.x + stage.x + (card.x + card.width + m) * k
         readonly property real y1: shifter.y + stage.y + (card.y + card.height + m) * k
-        x: (!win.live || !grab) ? 0 : Math.max(0, Math.round(shifter.x + stage.x + (card.x - m) * k))
-        y: (!win.live || !grab) ? 0 : Math.max(0, Math.round(shifter.y + stage.y + (card.y - m) * k))
-        width: (!win.live || !grab) ? 1 : Math.max(0, Math.ceil(x1) - x)
-        height: (!win.live || !grab) ? 1 : Math.max(0, Math.ceil(y1) - y)
+        x: (!win.live) ? 0 : Math.max(0, Math.round(shifter.x + stage.x + (card.x - m) * k))
+        y: (!win.live) ? 0 : Math.max(0, Math.round(shifter.y + stage.y + (card.y - m) * k))
+        width: (!win.live) ? 1 : Math.max(0, Math.ceil(x1) - x)
+        height: (!win.live) ? 1 : Math.max(0, Math.ceil(y1) - y)
     }
 
     // ===== the player =====
@@ -706,6 +705,7 @@ PanelWindow {
                 // this does).
                 MouseArea {
                     id: dragArea
+                    enabled: EditMode.desktopDragAllowed || chrome.selected
                     z: 1
                     anchors.fill: parent
                     acceptedButtons: Qt.LeftButton
@@ -779,13 +779,13 @@ PanelWindow {
                     cy: card.midY
                 }
 
-                // Point at the lyrics: the sync keys appear (not while editing, and only where
-                // the card takes the mouse at all).
+                // Point at the lyrics: the sync keys appear even with widgets locked,
+                // but stay hidden while arranging widgets in Edit Desktop.
                 HoverHandler {
                     id: hover
                 }
 
-                readonly property bool keysOn: hover.hovered && !EditMode.active && cardMask.grab
+                readonly property bool keysOn: hover.hovered && !EditMode.active
                     && !win.demo
 
                 // Built only while pointed at (and while they fade out): four stickers are 56
