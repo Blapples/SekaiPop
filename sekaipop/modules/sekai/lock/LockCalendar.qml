@@ -254,6 +254,12 @@ Item {
         function onFocusRequested() {
             root.forceActiveFocus()
         }
+        function onResumed() {
+            // Re-read wall time now; a minute timer can retain its pre-sleep delay.
+            // Re-enabling also schedules the next normal minute boundary.
+            clock.enabled = false
+            clock.enabled = true
+        }
         function onFailureCountChanged() {
             shakeAnim.restart()
         }
