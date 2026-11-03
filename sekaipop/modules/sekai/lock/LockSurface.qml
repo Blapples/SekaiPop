@@ -30,6 +30,8 @@ Item {
     // The shared LockContext.
     required property var context
 
+    readonly property bool use24h: SettingsService.flag("time.use24h")
+
     // Flip to true for a soft blurred wallpaper instead of the crisp one
     // (the shell's own windows are never visible behind the lock, so the
     // blur is purely a look — it costs a little GPU, which is why the
@@ -622,7 +624,7 @@ Item {
             OutlinedText {
                 id: bigClock
                 y: dateBand.height + root.px(2)
-                text: Qt.formatDateTime(clock.date, "hh:mm")
+                text: Qt.formatDateTime(clock.date, root.use24h ? "HH:mm" : "hh:mm AP").split(" ")[0]
                 pixelSize: root.px(236)
                 outline: root.px(7)
             }
@@ -646,6 +648,7 @@ Item {
 
             // AM / PM, as the mint tag the gacha screen uses for "Group Event Exclusive".
             Rectangle {
+                visible: !root.use24h
                 x: bigClock.width + root.px(10)
                 y: bigClock.y + bigClock.height * 0.56
                 width: ampm.implicitWidth + root.px(44)
@@ -734,7 +737,7 @@ Item {
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Locked since " + Qt.formatDateTime(LockState.lockedAt, "h:mm AP")
+                    text: "Locked since " + Qt.formatDateTime(LockState.lockedAt, root.use24h ? "HH:mm" : "h:mm AP")
                     color: "white"
                     font.family: Theme.fontFamily
                     font.pixelSize: root.px(24)
