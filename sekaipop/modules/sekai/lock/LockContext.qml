@@ -46,6 +46,8 @@ Scope {
     signal unlocked()
     // Asks the surface(s) to grab keyboard focus again (see Lockscreen.qml).
     signal focusRequested()
+    // Notifies every lock surface after logind resumes, even without fingerprint unlock.
+    signal resumed()
 
     // Ctrl+A: the whole password is "selected" (the dots light up). The next
     // key typed replaces it, Backspace / Delete wipes it. Any change to the
@@ -191,6 +193,7 @@ Scope {
     // fprintd may lose its reader while the machine sleeps. Abort any stale
     // conversation before starting a fresh one after logind resumes.
     function resumeFromSleep() {
+        root.resumed()
         if (!LockState.locked || !SettingsService.flag("lock.fingerprint"))
             return
         stopFp()
