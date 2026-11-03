@@ -120,6 +120,11 @@ Scope {
         function hitKind(px, py) {
             if (!win.hasSel)
                 return "new"
+            const mc = 16
+            if (Math.abs(px - win.selX) <= mc && Math.abs(py - win.selY) <= mc) return "tl"
+            if (Math.abs(px - (win.selX + win.selW)) <= mc && Math.abs(py - win.selY) <= mc) return "tr"
+            if (Math.abs(px - win.selX) <= mc && Math.abs(py - (win.selY + win.selH)) <= mc) return "bl"
+            if (Math.abs(px - (win.selX + win.selW)) <= mc && Math.abs(py - (win.selY + win.selH)) <= mc) return "br"
             const m = 8
             const l = Math.abs(px - win.selX) <= m
             const r = Math.abs(px - (win.selX + win.selW)) <= m
@@ -127,10 +132,6 @@ Scope {
             const b = Math.abs(py - (win.selY + win.selH)) <= m
             const inX = px >= win.selX - m && px <= win.selX + win.selW + m
             const inY = py >= win.selY - m && py <= win.selY + win.selH + m
-            if (l && t && inY) return "tl"
-            if (r && t && inY) return "tr"
-            if (l && b && inY) return "bl"
-            if (r && b && inY) return "br"
             if (l && inY) return "l"
             if (r && inY) return "r"
             if (t && inX) return "t"
