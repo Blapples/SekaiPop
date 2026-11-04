@@ -31,6 +31,8 @@ MARK='-- sekaipop:hypr:'
 # general.gaps_in 5 int  ->  { ["general"] = { ["gaps_in"] = 5 } }
 lua_table() {
     path="$1"; val="$2"
+    # The panel keeps the legacy key; Lua renamed this option.
+    [ "$path" = input.touchpad.tap-to-click ] && path=input.touchpad.tap_to_click
     open=""; close=""
     old_ifs="$IFS"; IFS=.
     set -- $path
@@ -60,7 +62,14 @@ drop_marker() {
     # Everything except our line for <path>. A grep that really failed (exit
     # 2) must never replace the file with nothing; exit 1 = no lines left.
     tmp=$(mktemp "$dir/.sekaipop_overrides.XXXXXX") || return 1
-    grep -v -F -e "$MARK$1" "$file" > "$tmp"
+    case "$1" in
+        input.touchpad.tap-to-click|input.touchpad.tap_to_click)
+            # Also remove overrides repaired manually with the Lua spelling.
+            grep -v -F -e "${MARK}input.touchpad.tap-to-click" \
+                -e "${MARK}input.touchpad.tap_to_click" "$file" > "$tmp"
+            ;;
+        *) grep -v -F -e "$MARK$1" "$file" > "$tmp" ;;
+    esac
     [ $? -le 1 ] || { rm -f "$tmp"; return 1; }
     chmod 644 "$tmp"
     mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
@@ -167,7 +176,11 @@ case "$1" in
                 continue
             fi
             # "int: 5" / "float: 0.9" / "str: dwindle" / "custom type: 5 5 5 5"
-            v=$(hyprctl getoption "$(printf '%s' "$path" | tr . :)" 2>/dev/null | sed -n '1s/^[^:]*: *//p' | cut -d' ' -f1)
+            query="$path"
+            if [ "$path" = input.touchpad.tap-to-click ] && [ -f "$dir/hyprland.lua" ]; then
+                query=input.touchpad.tap_to_click
+            fi
+            v=$(hyprctl getoption "$(printf '%s' "$query" | tr . :)" 2>/dev/null | sed -n '1s/^[^:]*: *//p' | cut -d' ' -f1)
             [ -n "$v" ] && printf '%s=%s\n' "$path" "$v"
         done
         ;;
