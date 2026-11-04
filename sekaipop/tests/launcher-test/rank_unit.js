@@ -65,9 +65,9 @@ eval(oldFns.join('\n') + '\noldRoot.rank = rank; oldRoot.scoreApp = scoreApp;');
 
 // ---- new ----
 const newRoot = { query: '' };
-const names = ['signatureOf', 'buildEntries', 'rankEntries', 'rank', 'scoreEntry'];
+const names = ['buildEntries', 'rankEntries', 'rank', 'scoreEntry'];
 const newFns = names.map(n => grab(newSrc, n).replace(/root\./g, 'newRoot.'));
-eval(newFns.join('\n') + '\nnewRoot.signatureOf = signatureOf; newRoot.buildEntries = buildEntries; newRoot.rankEntries = rankEntries; newRoot.rank = rank; newRoot.scoreEntry = scoreEntry;');
+eval(newFns.join('\n') + '\nnewRoot.buildEntries = buildEntries; newRoot.rankEntries = rankEntries; newRoot.rank = rank; newRoot.scoreEntry = scoreEntry;');
 
 // ---- fake apps ----
 let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;

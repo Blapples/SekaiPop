@@ -20,7 +20,8 @@ import "../modules/common/functions/AppUsage.js" as AU
 //   - the objects are STABLE: the same app is the same object every time, so
 //     a ScriptModel can tell which tiles stay and which come and go (see
 //     LauncherFace.qml) instead of tearing down and rebuilding the whole grid
-//     per letter.
+//     per letter. That holds across Quickshell's rescans too: an app whose
+//     DesktopEntry and fields did not change keeps its entry object.
 //   - `iconFor()` remembers every icon path it has looked up.
 //
 // Launches are counted (AppUsage.js) for the "Most used" order, Settings > General >
@@ -43,53 +44,67 @@ Scope {
 
     // Every non-hidden, non-NoDisplay application on the system
     // (DesktopEntries.applications already filters those out), name-sorted
-    // so there's a stable base order to rank from. `.values` views the
-    // ObjectModel as a real reactive JS list, so this is meant to keep itself in
-    // sync if apps are installed/removed while the shell is running.
+    // so there's a stable base order to rank from.
     //
-    // That was not enough on its own: an app added to ~/.local/share/applications
-    // after the shell started stayed missing from the Apps screen until the shell
-    // was reloaded. So the list is also re-read, on purpose, in two places that do
-    // not depend on the binding noticing (`sync()` below): when the model says its
-    // values changed, and every time the Apps screen opens. `_rev` is only there to
-    // make this binding run again when `sync()` finds the apps differ from the ones
-    // the list was last built from.
-    property int _rev: 0
-    readonly property var entries: {
-        root._rev
-        return root.buildEntries(DesktopEntries.applications.values)
-    }
+    // NOT a binding on `DesktopEntries.applications.values` (issue #128). Quickshell
+    // rescans every application folder whenever a file appears or goes in that folder
+    // *or any folder above it* (its monitor watches the parents up to /), so a shell
+    // writing its history in ~ or a player rewriting ~/.local/share/recently-used.xbel
+    // starts a rescan. The rescan then updates the model one row at a time, and
+    // `valuesChanged` fires per row: every app found in two data folders (a
+    // ~/.local/share override, a folder listed twice in XDG_DATA_DIRS) gets a new
+    // DesktopEntry each scan and costs two signals. With /usr/share listed twice that
+    // was 312 signals for one rescan of 224 apps, and a binding on `.values` rebuilt and
+    // re-sorted the whole list on each of them: the shell froze at 100% CPU.
+    //
+    // So the list is rebuilt from code, once per finished scan (`applicationsChanged`
+    // below) and whenever the Apps screen opens (`sync()`), and only when the apps
+    // really differ from the ones it was built from.
+    property var _entries: []
+    readonly property var entries: root._entries
 
-    // The apps (their desktop ids, in the model's order) the list was last built
-    // from. Plain scratch, like `_cache`: not reactive.
-    function signatureOf(list) {
-        let sig = list.length + ":"
+    // Does `list` hold exactly the DesktopEntry objects the list was built from? One
+    // pass and no reads into C++: an app Quickshell replaced is a different object.
+    function sameApps(list) {
+        const built = root._cache.byApp
+        if (!built || built.size !== list.length)
+            return false
         for (let i = 0; i < list.length; i++)
-            sig += (list[i].id || list[i].name || "") + "|"
-        return sig
+            if (!built.has(list[i]))
+                return false
+        return true
     }
 
-    // Re-reads the system's apps and rebuilds `entries` if they are not the ones it
-    // was built from. Cheap when nothing changed (one pass over the ids); no rebuild
-    // and no new objects then, so the grid keeps its tiles.
+    // Reads every app's fields and rebuilds `entries` if anything changed. Run once per
+    // scan: that is also when an edited .desktop file's new name or icon arrives (the
+    // same DesktopEntry, updated in place).
+    function refresh() {
+        const next = root.buildEntries(DesktopEntries.applications.values)
+        if (next !== root._entries)
+            root._entries = next
+    }
+
+    // The Apps screen is opening: pick up apps installed since the list was built (the
+    // check that costs nothing when none were), and move the "Most used" order on.
     function sync() {
-        const sig = root.signatureOf(DesktopEntries.applications.values)
-        if (sig !== root._cache.sig)
-            root._rev++
+        if (!root.sameApps(DesktopEntries.applications.values))
+            root.refresh()
         if (root._cache.usageDirty) {
             root._cache.usageDirty = false
             root._usageRev++
         }
     }
 
-    // The model says its apps changed: make sure the list followed. Deferred a beat so
-    // the binding above gets to rebuild first; `sync()` then finds nothing to do (the
-    // normal case) and only steps in when the binding did not.
-    Connections {
-        target: DesktopEntries.applications
+    Component.onCompleted: root.refresh()
 
-        function onValuesChanged() {
-            Qt.callLater(root.sync)
+    // Emitted once per finished scan, after the model has every row in place. Run
+    // straight away, not deferred: the apps the old list points at are deleted
+    // (deleteLater) as soon as the event loop turns.
+    Connections {
+        target: DesktopEntries
+
+        function onApplicationsChanged() {
+            root.refresh()
         }
     }
 
@@ -140,40 +155,69 @@ Scope {
     // you've actually typed something.
     readonly property var results: root.query.length === 0 ? [] : root.rank(root.query)
 
+    // The entries for `list`, name-sorted. Each app's fields are read once. When every
+    // app is the same DesktopEntry with the same fields as last time, the previous
+    // array itself comes back (nothing downstream re-runs); otherwise an app that did
+    // not change keeps its entry object, and only new or changed apps get new ones.
     function buildEntries(list) {
-        root._cache.sig = root.signatureOf(list)
-        const apps = list.slice()
-        apps.sort((a, b) => a.name.localeCompare(b.name))
-        const seen = ({})
-        const out = new Array(apps.length)
-        for (let i = 0; i < apps.length; i++) {
-            const a = apps[i]
+        const c = root._cache
+        const built = c.byApp || new Map()
+        const old = root._entries || []
+        const rows = new Array(list.length)
+        let same = list.length === old.length
+        for (let i = 0; i < list.length; i++) {
+            const a = list[i]
             let kw = ""
             const kws = a.keywords || []
             for (const k of kws)
                 kw += k + "\n"
             const name = a.name || ""
             const generic = a.genericName || ""
+            const icon = a.icon || ""
+            const comment = a.comment || ""
+            const sig = name + "\u0001" + generic + "\u0001" + icon + "\u0001" + comment + "\u0001" + kw
+            const prev = built.get(a)
+            if (!prev || prev.sig !== sig)
+                same = false
+            rows[i] = { a: a, id: a.id, name: name, generic: generic, icon: icon, comment: comment, kw: kw, sig: sig, prev: prev }
+        }
+        if (same)
+            return old
+        rows.sort((x, y) => x.name.localeCompare(y.name))
+        const seen = ({})
+        const out = new Array(rows.length)
+        const byApp = new Map()
+        for (let i = 0; i < rows.length; i++) {
+            const r = rows[i]
             // A key the grid can tell apps apart by. Desktop ids are unique; the
             // counter is only there so a odd duplicate can never collide.
-            let key = a.id || (name + "\u0001" + (a.icon || ""))
+            let key = r.id || (r.name + "\u0001" + r.icon)
             if (seen[key] !== undefined)
                 key = key + "#" + (++seen[key])
             else
                 seen[key] = 0
-            out[i] = {
-                key: key,
-                idx: i,
-                app: a,
-                name: name,
-                icon: a.icon || "",
-                generic: generic,
-                nameL: name.toLowerCase(),
-                genericL: generic.toLowerCase(),
-                keywordsL: kw.toLowerCase(),
-                commentL: (a.comment || "").toLowerCase()
+            let e = r.prev
+            if (e && e.sig === r.sig && e.key === key) {
+                e.idx = i
+            } else {
+                e = {
+                    key: key,
+                    idx: i,
+                    app: r.a,
+                    sig: r.sig,
+                    name: r.name,
+                    icon: r.icon,
+                    generic: r.generic,
+                    nameL: r.name.toLowerCase(),
+                    genericL: r.generic.toLowerCase(),
+                    keywordsL: r.kw.toLowerCase(),
+                    commentL: r.comment.toLowerCase()
+                }
             }
+            out[i] = e
+            byApp.set(r.a, e)
         }
+        c.byApp = byApp
         return out
     }
 
