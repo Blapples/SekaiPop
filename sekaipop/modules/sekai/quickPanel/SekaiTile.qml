@@ -32,6 +32,13 @@ Item {
 
     signal clicked()
 
+    // Observe hover independently of the click area: steppers have their own
+    // buttons and disable that area, but their labels still need to be readable.
+    HoverHandler {
+        id: textHover
+    }
+
+
     // Anything declared inside the tile goes in its content box (which leans
     // with the plate, like the icon and the writing).
     default property alias extra: key.content
@@ -107,9 +114,9 @@ Item {
             width: Math.max(10, key.capW - x - root.textRightPad)
             anchors.verticalCenter: parent.verticalCenter
 
-            Text {
+            SettingsMarquee {
                 width: parent.width
-                elide: Text.ElideRight
+                hovered: textHover.hovered
                 text: root.label
                 color: key.ink
                 font.family: mt.fontFamily
@@ -117,12 +124,11 @@ Item {
                 font.weight: Font.ExtraBold
                 font.styleName: mt.fontStyleBold
                 lineHeight: 22
-                lineHeightMode: Text.FixedHeight
             }
 
-            Text {
+            SettingsMarquee {
                 width: parent.width
-                elide: Text.ElideRight
+                hovered: textHover.hovered
                 visible: root.subtitle !== ""
                 text: root.subtitle
                 color: key.litP > 0.5 ? Qt.rgba(mt.colBorder.r, mt.colBorder.g, mt.colBorder.b, 0.78) : mt.pInkSub
@@ -130,7 +136,6 @@ Item {
                 font.pixelSize: 15
                 font.weight: Font.DemiBold
                 lineHeight: 20
-                lineHeightMode: Text.FixedHeight
             }
         }
     }
