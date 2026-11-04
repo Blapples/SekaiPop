@@ -808,11 +808,14 @@ Item {
                         y: root.px(12)
                         elide: Text.ElideRight
                         horizontalAlignment: Text.AlignHCenter
-                        text: root.context.fprintListening ? root.context.fprintMessage
+                        text: root.context.fprintListening
+                              ? (root.context.fprintMessageIsError ? root.context.fprintMessage : "Touch fingerprint sensor")
                               : (root.context.unlockInProgress ? "Checking…" : "Password")
                         color: root.context.fprintMessageIsError ? LockPalette.pink : LockPalette.cBorder
                         font.family: Theme.fontFamily
                         font.pixelSize: root.px(34)
+                        fontSizeMode: Text.HorizontalFit
+                        minimumPixelSize: root.px(22)
                         font.weight: Font.ExtraBold
                         font.styleName: Theme.fontStyleBold
                     }

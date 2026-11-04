@@ -756,9 +756,10 @@ Item {
         id: calCard
         visible: root.showMonth
         x: root.calLeft
-        y: root.rowY
+        // Give both date rows more vertical room, keeping the footer aligned.
+        y: root.rowY - root.px(24)
         width: root.calRight - root.calLeft
-        height: root.rowH
+        height: root.rowH + root.px(24)
         cornerRadius: root.px(26)
         fillColor: root.white
         outlineColor: root.ink
@@ -901,7 +902,7 @@ Item {
                         width: parent.width - (calFpIcon.visible ? calFpIcon.width + parent.spacing : 0)
                         elide: Text.ElideRight
                         text: root.failed ? root.lastFailure.toUpperCase()
-                            : (root.context.fprintListening ? root.context.fprintMessage.toUpperCase()
+                            : (root.context.fprintListening ? (root.context.fprintMessageIsError ? root.context.fprintMessage.toUpperCase() : "TOUCH FINGERPRINT SENSOR")
                             : (root.context.unlockInProgress ? "CHECKING\u2026" : "PASSWORD"))
                         color: root.failed || root.context.fprintMessageIsError ? root.accent : LockPalette.calMuted
                         font.family: Theme.fontFamily
