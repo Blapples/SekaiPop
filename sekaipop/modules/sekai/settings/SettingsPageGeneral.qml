@@ -24,12 +24,14 @@ SettingsPage {
             }
         }
 
-        SettingToggle {
-            icon: "thermostat"
-            label: "Fahrenheit"
-            detail: SettingsService.flag("weather.fahrenheit") ? "°F" : "°C"
-            checked: SettingsService.flag("weather.fahrenheit")
-            onToggled: SettingsService.toggle("weather.fahrenheit")
+        SettingChoice {
+            label: "Temperature units"
+            current: SettingsService.flag("weather.fahrenheit") ? "fahrenheit" : "celsius"
+            options: [
+                { id: "celsius", label: "Celsius (°C)" },
+                { id: "fahrenheit", label: "Fahrenheit (°F)" }
+            ]
+            onPicked: id => SettingsService.set("weather.fahrenheit", id === "fahrenheit")
         }
 
         SettingChoice {
