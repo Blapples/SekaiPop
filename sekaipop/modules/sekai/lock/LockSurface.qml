@@ -714,9 +714,11 @@ Item {
 
         // ===== bottom left =====
         Rectangle {
-            x: titleBlock.x
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: root.px(56)
+            x: root.px(64)
+            // Stack above the controls when the two rows would overlap.
+            y: x + width + root.px(24) > controls.x
+               ? controls.y - height - root.px(20)
+               : parent.height - height - root.px(56)
             height: root.px(58)
             width: lockedRow.implicitWidth + root.px(48)
             radius: height / 2
@@ -974,6 +976,7 @@ Item {
                     color: LockPalette.mint
 
                     Text {
+                        id: unlockLabel
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.horizontalCenterOffset: root.px(30)
                         y: root.px(12)
@@ -1042,10 +1045,11 @@ Item {
                     }
                 }
 
-                // The little pink tag on the corner, like "Once daily".
+                // Align the shortcut text to Unlock's baseline, with an optical adjustment.
                 Rectangle {
-                    x: root.px(14)
-                    y: root.px(8)
+                    x: root.px(32)
+                    y: unlockLabel.mapToItem(parent, 0, unlockLabel.baselineOffset).y
+                       - hint.y - hint.baselineOffset - root.px(8)
                     width: hint.implicitWidth + root.px(26)
                     height: root.px(30)
                     radius: height / 2
