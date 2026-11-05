@@ -31,6 +31,11 @@
 #       wf-recorder on <geometry> ("x,y wxh", global logical pixels, the format
 #       slurp prints). The script becomes wf-recorder (exec), so the caller stops
 #       it with SIGINT, which is what makes wf-recorder finish the file properly.
+#   region-action.sh encoder   print the wf-recorder options for the best video encoder that
+#       works on this machine (nothing printed = wf-recorder's own software x264):
+#       NVENC on an NVIDIA card, else VAAPI on another GPU (when an NVIDIA card is
+#       there but NVENC is not usable, e.g. its driver is older than ffmpeg's NVENC
+#       API), else software. Each is tried with a one-frame ffmpeg encode first.
 #   region-action.sh rules     switch Hyprland's layer animation off for the picker and
 #       its preview card (no zoom on the dim): applied live, and written to
 #       ~/.config/hypr/sekaipop_overrides.lua when hyprland.lua loads that file.
@@ -47,6 +52,37 @@ mode="$1"
 
 notify() { command -v notify-send >/dev/null 2>&1 && notify-send -a sekaipop "$@"; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Does a one-frame encode with the given ffmpeg arguments work? Gives up after 5 s.
+try_encode() {
+    have ffmpeg || return 1
+    if have timeout; then
+        timeout 5 ffmpeg -v error -nostdin -f lavfi -i nullsrc=s=256x256 -frames:v 1 "$@" -f null - >/dev/null 2>&1
+    else
+        ffmpeg -v error -nostdin -f lavfi -i nullsrc=s=256x256 -frames:v 1 "$@" -f null - >/dev/null 2>&1
+    fi
+}
+
+# wf-recorder options for the best encoder that works here (see "encoder" above).
+pick_encoder() {
+    [ -e /dev/nvidiactl ] || return 0
+    # NVENC: ~20 % of one core instead of 3-4 cores. /dev/nvidiactl only says the NVIDIA
+    # driver is loaded; NVENC can still fail (a driver older than ffmpeg's NVENC API).
+    if try_encode -c:v h264_nvenc; then
+        echo "-c h264_nvenc -p rc=vbr -p cq=21 -p b=0 -p preset=p5"
+        return 0
+    fi
+    # VAAPI on a render node that is not the NVIDIA one (the Intel / AMD GPU of a laptop).
+    for node in /dev/dri/renderD*; do
+        [ -e "$node" ] || continue
+        drv=$(basename "$(readlink -f "/sys/class/drm/$(basename "$node")/device/driver" 2>/dev/null)")
+        [ "$drv" = nvidia ] && continue
+        if try_encode -vaapi_device "$node" -vf format=nv12,hwupload -c:v h264_vaapi; then
+            echo "-c h264_vaapi -d $node"
+            return 0
+        fi
+    done
+}
 
 case "$mode" in
     capture)
@@ -142,9 +178,7 @@ case "$mode" in
         [ -n "$geom" ] && [ -n "$file" ] || exit 2
         have wf-recorder || { notify -i material:videocam "Recording" "wf-recorder is not installed"; exit 127; }
         mkdir -p "$(dirname "$file")" || exit 1
-        # An NVIDIA card encodes on the GPU (NVENC): ~20 % of one core instead of 3-4 cores.
-        enc=""
-        [ -e /dev/nvidiactl ] && enc="-c h264_nvenc -p rc=vbr -p cq=21 -p b=0 -p preset=p5"
+        enc=$(pick_encoder)
         case "$sound" in
             system)
                 sink=$(pactl get-default-sink 2>/dev/null)
@@ -154,6 +188,9 @@ case "$mode" in
             mic)  exec wf-recorder $enc -g "$geom" --audio -f "$file" ;;
             *)    exec wf-recorder $enc -g "$geom" -f "$file" ;;
         esac
+        ;;
+    encoder)
+        pick_encoder
         ;;
     rules)
         # The picker's overlay is mapped when it opens and unmapped when it
@@ -197,7 +234,7 @@ case "$mode" in
         done
         ;;
     *)
-        echo "usage: $0 capture|crop|copy|save|ocr|search|swappy|stash|reuse|record|rules|tools ..." >&2
+        echo "usage: $0 capture|crop|copy|save|ocr|search|swappy|stash|reuse|record|encoder|rules|tools ..." >&2
         exit 2
         ;;
 esac
