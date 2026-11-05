@@ -881,6 +881,8 @@ Item {
                     x: root.px(20)
                     y: root.px(10)
                     width: parent.width - root.px(40) - (calLayoutTag.visible ? calLayoutTag.width + root.px(8) : 0)
+                    // Reserve the space above the password well for up to two prompt lines.
+                    height: Math.max(0, well.y - y - root.px(6))
                     spacing: root.px(6)
 
                     // Shown after PAM reports a fingerprint prompt.
@@ -900,13 +902,20 @@ Item {
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - (calFpIcon.visible ? calFpIcon.width + parent.spacing : 0)
+                        height: parent.height
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 2
                         elide: Text.ElideRight
                         text: root.failed ? root.lastFailure.toUpperCase()
-                            : (root.context.fprintListening ? (root.context.fprintMessageIsError ? root.context.fprintMessage.toUpperCase() : "TOUCH FINGERPRINT SENSOR")
+                            : (root.context.fprintListening ? root.context.fprintMessage.toUpperCase()
                             : (root.context.unlockInProgress ? "CHECKING\u2026" : "PASSWORD"))
                         color: root.failed || root.context.fprintMessageIsError ? root.accent : LockPalette.calMuted
                         font.family: Theme.fontFamily
                         font.pixelSize: root.px(14)
+                        fontSizeMode: Text.Fit
+                        minimumPixelSize: root.px(10)
                         font.weight: Font.ExtraBold
                         font.styleName: Theme.fontStyleBold
                         font.letterSpacing: root.px(1)

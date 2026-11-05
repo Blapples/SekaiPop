@@ -806,10 +806,11 @@ Item {
                         // text stays centred.
                         width: parent.width - 2 * (layoutTag.visible ? layoutTag.width + root.px(28) : root.px(24))
                         y: root.px(12)
+                        height: Math.max(0, well.y - y - root.px(6))
+                        verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         horizontalAlignment: Text.AlignHCenter
-                        text: root.context.fprintListening
-                              ? (root.context.fprintMessageIsError ? root.context.fprintMessage : "Touch fingerprint sensor")
+                        text: root.context.fprintListening ? root.context.fprintMessage
                               : (root.context.unlockInProgress ? "Checking…" : "Password")
                         color: root.context.fprintMessageIsError ? LockPalette.pink : LockPalette.cBorder
                         font.family: Theme.fontFamily
@@ -1051,7 +1052,7 @@ Item {
                 // Align the shortcut text to Unlock's baseline, with an optical adjustment.
                 Rectangle {
                     x: root.px(32)
-                    y: unlockLabel.mapToItem(parent, 0, unlockLabel.baselineOffset).y
+                    y: unlockLabel.parent.y + unlockLabel.y + unlockLabel.baselineOffset
                        - hint.y - hint.baselineOffset - root.px(8)
                     width: hint.implicitWidth + root.px(26)
                     height: root.px(30)
