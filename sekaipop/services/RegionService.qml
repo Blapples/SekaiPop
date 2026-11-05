@@ -388,7 +388,9 @@ Singleton {
         onExited: {
             if (root.recordFile !== "") {
                 Quickshell.execDetached(["sh", "-c",
-                    "[ -s \"$1\" ] && notify-send -a sekaipop -i material:videocam 'Recording saved' \"$1\"", "sh", root.recordFile])
+                    "if [ -s \"$1\" ]; then notify-send -a sekaipop -i material:videocam 'Recording saved' \"$1\"; "
+                    + "else notify-send -a sekaipop -i material:error 'Recording failed' 'wf-recorder stopped before it saved anything. Run it in a terminal to see why.'; fi",
+                    "sh", root.recordFile])
                 root.recordFile = ""
             }
         }
