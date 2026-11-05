@@ -714,9 +714,11 @@ Item {
 
         // ===== bottom left =====
         Rectangle {
-            x: titleBlock.x
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: root.px(56)
+            x: root.px(64)
+            // Stack above the controls when the two rows would overlap.
+            y: x + width + root.px(24) > controls.x
+               ? controls.y - height - root.px(20)
+               : parent.height - height - root.px(56)
             height: root.px(58)
             width: lockedRow.implicitWidth + root.px(48)
             radius: height / 2
@@ -804,6 +806,8 @@ Item {
                         // text stays centred.
                         width: parent.width - 2 * (layoutTag.visible ? layoutTag.width + root.px(28) : root.px(24))
                         y: root.px(12)
+                        height: Math.max(0, well.y - y - root.px(6))
+                        verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         horizontalAlignment: Text.AlignHCenter
                         text: root.context.fprintListening ? root.context.fprintMessage
@@ -811,6 +815,8 @@ Item {
                         color: root.context.fprintMessageIsError ? LockPalette.pink : LockPalette.cBorder
                         font.family: Theme.fontFamily
                         font.pixelSize: root.px(34)
+                        fontSizeMode: Text.HorizontalFit
+                        minimumPixelSize: root.px(22)
                         font.weight: Font.ExtraBold
                         font.styleName: Theme.fontStyleBold
                     }
@@ -974,6 +980,7 @@ Item {
                     color: LockPalette.mint
 
                     Text {
+                        id: unlockLabel
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.horizontalCenterOffset: root.px(30)
                         y: root.px(12)
@@ -1042,10 +1049,11 @@ Item {
                     }
                 }
 
-                // The little pink tag on the corner, like "Once daily".
+                // Align the shortcut text to Unlock's baseline, with an optical adjustment.
                 Rectangle {
-                    x: root.px(14)
-                    y: root.px(8)
+                    x: root.px(32)
+                    y: unlockLabel.parent.y + unlockLabel.y + unlockLabel.baselineOffset
+                       - hint.y - hint.baselineOffset - root.px(8)
                     width: hint.implicitWidth + root.px(26)
                     height: root.px(30)
                     radius: height / 2
