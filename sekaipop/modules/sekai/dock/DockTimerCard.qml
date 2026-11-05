@@ -1,6 +1,7 @@
 import QtQuick
 import qs.services
 import qs.modules.common
+import qs.modules.common.widgets
 
 // The dock's Timer key (Dock.qml): Timer, Stopwatch and Pomodoro on one card. The
 // clocks themselves live in services/TimerService.qml, so they keep running when the card
@@ -20,7 +21,7 @@ DockCard {
     readonly property real bodyW: 330
 
     contentWidth: root.bodyW
-    contentHeight: 244
+    contentHeight: root.tab === "timer" ? 264 : 244
 
     // ---- tabs ----
     Row {
@@ -51,11 +52,25 @@ DockCard {
 
     // ---- Timer ----
     Item {
+        id: timerPage
         visible: root.tab === "timer"
         x: root.pad
         y: root.pad + 46
         width: root.bodyW
-        height: 190
+        height: 210
+
+        readonly property int customSeconds: Number(customHours.text) * 3600
+            + Number(customMinutes.text) * 60 + Number(customSecondsInput.text)
+        readonly property bool canSetCustom: !TimerService.timerRunning
+            && customHours.acceptableInput && customMinutes.acceptableInput
+            && customSecondsInput.acceptableInput
+            && customSeconds > 0
+
+        function applyCustom() {
+            if (!timerPage.canSetCustom)
+                return
+            TimerService.setTimerMinutes(timerPage.customSeconds / 60)
+        }
 
         Text {
             id: tBig
@@ -63,6 +78,8 @@ DockCard {
             text: TimerService.clock(TimerService.timerLeft, false)
             color: TimerService.timerRunning ? mt.ink : mt.inkSub
             font.family: mt.fontFamily
+            font.features: { "tnum": 1 }
+            font.kerning: false
             font.pixelSize: 52
             font.weight: Font.ExtraBold
             font.styleName: mt.fontStyleBold
@@ -96,7 +113,7 @@ DockCard {
             DockButton {
                 accent: true
                 icon: TimerService.timerRunning ? "pause" : "play_arrow"
-                label: TimerService.timerRunning ? "Pause" : "Start"
+                label: TimerService.timerRunning ? "Pause" : (TimerService.timerPaused ? "Resume" : "Start")
                 onClicked: TimerService.toggleTimer()
             }
 
@@ -111,22 +128,119 @@ DockCard {
                 onClicked: TimerService.resetTimer()
             }
         }
+
+        Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: 166
+            spacing: 6
+            enabled: !TimerService.timerRunning
+            opacity: enabled ? 1 : 0.5
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Custom"
+                color: mt.inkSub
+                font.family: mt.fontFamily
+                font.pixelSize: 13
+                font.weight: Font.Bold
+            }
+
+            DockDurationInput {
+                id: customHours
+                theme: mt
+                width: 40
+                maximum: 99
+                text: "0"
+                onAccepted: timerPage.applyCustom()
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "h"
+                color: mt.inkSub
+                font.family: mt.fontFamily
+                font.pixelSize: 12
+            }
+
+            DockDurationInput {
+                id: customMinutes
+                theme: mt
+                width: 40
+                text: "5"
+                onAccepted: timerPage.applyCustom()
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "m"
+                color: mt.inkSub
+                font.family: mt.fontFamily
+                font.pixelSize: 12
+            }
+
+            DockDurationInput {
+                id: customSecondsInput
+                theme: mt
+                width: 40
+                text: "0"
+                onAccepted: timerPage.applyCustom()
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "s"
+                color: mt.inkSub
+                font.family: mt.fontFamily
+                font.pixelSize: 12
+            }
+
+            DockButton {
+                height: 30
+                label: "Set"
+                fontSize: 13
+                enabled: timerPage.canSetCustom
+                opacity: enabled ? 1 : 0.5
+                onClicked: timerPage.applyCustom()
+            }
+        }
     }
 
     // ---- Stopwatch ----
     Item {
+        id: stopwatch
         visible: root.tab === "stopwatch"
         x: root.pad
         y: root.pad + 46
         width: root.bodyW
         height: 190
 
+        property real now: Date.now()
+        readonly property real elapsed: stopwatchTick.running
+            ? Math.max(0, (stopwatch.now - TimerService.swStart) / 1000)
+            : TimerService.swElapsed
+
+        // Only the open stopwatch panel needs frame-paced fractional updates.
+        Timer {
+            id: stopwatchTick
+            interval: 16
+            repeat: true
+            triggeredOnStart: true
+            running: root.open && stopwatch.visible && TimerService.swRunning
+            onTriggered: stopwatch.now = Date.now()
+        }
+
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: TimerService.clock(TimerService.swElapsed, true)
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            text: TimerService.stopwatchClock(stopwatch.elapsed)
             color: TimerService.swRunning ? mt.ink : mt.inkSub
             font.family: mt.fontFamily
+            font.features: { "tnum": 1 }
+            font.kerning: false
             font.pixelSize: 52
+            fontSizeMode: Text.HorizontalFit
+            minimumPixelSize: 28
             font.weight: Font.ExtraBold
             font.styleName: mt.fontStyleBold
         }
@@ -139,7 +253,7 @@ DockCard {
             DockButton {
                 accent: true
                 icon: TimerService.swRunning ? "pause" : "play_arrow"
-                label: TimerService.swRunning ? "Pause" : "Start"
+                label: TimerService.swRunning ? "Pause" : (TimerService.swPaused ? "Resume" : "Start")
                 onClicked: TimerService.toggleStopwatch()
             }
 
@@ -155,25 +269,40 @@ DockCard {
             }
         }
 
-        // The last three laps, newest first.
-        Column {
-            anchors.horizontalCenter: parent.horizontalCenter
+        // All retained laps, newest first, within the existing card height.
+        ListView {
+            id: lapList
             y: 116
+            width: parent.width
+            height: parent.height - y
+            clip: true
             spacing: 2
+            boundsBehavior: Flickable.StopAtBounds
+            interactive: contentHeight > height
+            model: TimerService.laps
+            onModelChanged: Qt.callLater(lapList.positionViewAtBeginning)
 
-            Repeater {
-                model: TimerService.laps.slice(0, 3)
-
-                delegate: Text {
-                    required property int index
-                    required property real modelData
-                    text: "Lap " + (TimerService.laps.length - index) + "   " + TimerService.clock(modelData, true)
-                    color: mt.inkSub
-                    font.family: mt.fontFamily
-                    font.pixelSize: 14
-                    font.weight: Font.Bold
-                }
+            delegate: Text {
+                required property int index
+                required property real modelData
+                width: lapList.width - 12
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+                text: "Lap " + (TimerService.lapCount - index) + "   " + TimerService.stopwatchClock(modelData)
+                color: mt.inkSub
+                font.family: mt.fontFamily
+                font.features: { "tnum": 1 }
+                font.kerning: false
+                font.pixelSize: 14
+                font.weight: Font.Bold
             }
+
+            SekaiScrollBar { margin: 4 }
+        }
+
+        WheelScroll {
+            scroller: lapList
+            step: 40
         }
     }
 
@@ -229,6 +358,8 @@ DockCard {
             text: TimerService.clock(TimerService.pomLeft, false)
             color: TimerService.pomRunning ? mt.ink : mt.inkSub
             font.family: mt.fontFamily
+            font.features: { "tnum": 1 }
+            font.kerning: false
             font.pixelSize: 52
             font.weight: Font.ExtraBold
             font.styleName: mt.fontStyleBold
@@ -242,7 +373,7 @@ DockCard {
             DockButton {
                 accent: true
                 icon: TimerService.pomRunning ? "pause" : "play_arrow"
-                label: TimerService.pomRunning ? "Pause" : "Start"
+                label: TimerService.pomRunning ? "Pause" : (TimerService.pomPaused ? "Resume" : "Start")
                 onClicked: TimerService.togglePomodoro()
             }
 
