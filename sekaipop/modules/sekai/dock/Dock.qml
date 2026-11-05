@@ -1463,9 +1463,10 @@ PanelWindow {
     WlrLayershell.layer: (dockWindow.dockPinned || dockWindow.autoHideOn || dockWindow.editing
                           || dockWindow.toolOpen === "files" || dockWindow.toolOpen === "shelf") ? WlrLayer.Top : WlrLayer.Bottom
     WlrLayershell.namespace: "sekaipop-dock"
-    // The folder card has a text box (the rename) and the Files stack listens for Esc /
-    // Backspace; the dock never takes the keyboard otherwise.
-    WlrLayershell.keyboardFocus: (dockWindow.folderOpen || dockWindow.toolOpen === "files") ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    // Rename and custom timer fields need typing; the Files stack listens for Esc / Backspace.
+    WlrLayershell.keyboardFocus: (dockWindow.folderOpen || dockWindow.toolOpen === "files"
+        || (dockWindow.toolOpen === "timer" && timerCard.tab === "timer"))
+        ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
     // The window itself runs the whole length of its edge and is transparent, so
     // without this the empty strip on either side of the pill would swallow clicks
@@ -2489,6 +2490,8 @@ PanelWindow {
             Pill {
                 id: flag
 
+                readonly property bool timing: slot.isTool && slot.modelData.tool === "timer"
+                    && TimerService.hasTime
                 readonly property bool wanted: slot.removing
                     || (slot.lit && ((slot.isApp && !slot.running) || slot.isFolder
                                      || (slot.isTool && dockWindow.toolOpen !== slot.modelData.tool)))
@@ -2497,7 +2500,8 @@ PanelWindow {
                     NumberAnimation { duration: 190; easing.type: Easing.OutBack; easing.overshoot: 2 }
                 }
 
-                readonly property string hint: slot.removing ? "release to remove" : "click to open"
+                readonly property string hint: slot.removing ? "release to remove"
+                    : (flag.timing && TimerService.shownPaused ? "Paused · click to open" : "click to open")
 
                 visible: flag.shown > 0.01
                 z: 60
@@ -2548,11 +2552,17 @@ PanelWindow {
                         Text {
                             id: flagTitle
                             width: Math.min(implicitWidth, 210)
-                            text: slot.modelData.displayName ?? ""
+                            text: flag.timing
+                                ? (TimerService.shownMode === "stopwatch" ? "Stopwatch"
+                                   : (TimerService.shownMode === "pomodoro" ? TimerService.phaseLabel : "Timer"))
+                                  + " · " + TimerService.shownClock
+                                : (slot.modelData.displayName ?? "")
                             elide: Text.ElideRight
                             color: mt.ink
                             font.family: mt.fontFamily
-                            font.pixelSize: 13
+                            font.pixelSize: flag.timing ? 16 : 13
+                            font.features: flag.timing ? { "tnum": 1 } : {}
+                            font.kerning: !flag.timing
                             font.weight: Font.ExtraBold
                             font.styleName: mt.fontStyleBold
                         }
@@ -2785,7 +2795,7 @@ PanelWindow {
                 Pill {
                     id: toolPill
                     readonly property string tool: slot.modelData.tool
-                    readonly property bool timing: tool === "timer" && TimerService.anyRunning
+                    readonly property bool timing: tool === "timer" && TimerService.hasTime
                     readonly property bool on: slot.lit || dockWindow.toolOpen === tool || timing || shelfDrop.containsDrag
                     cornerRadius: dockWindow.capKeys ? Math.min(toolPill.capWidth, toolPill.capHeight) / 2 : mt.radiusBadge
                     ringWidth: dockWindow.keyRing
@@ -2851,9 +2861,15 @@ PanelWindow {
                         visible: toolPill.timing
                         anchors.centerIn: parent
                         text: TimerService.shownText
+                        width: Math.max(0, parent.width - 8)
+                        horizontalAlignment: Text.AlignHCenter
                         color: dockWindow.capKeys ? mt.capInk : mt.ink
                         font.family: mt.fontFamily
-                        font.pixelSize: Math.max(9, dockWindow.iconSize * 0.3)
+                        font.features: { "tnum": 1 }
+                        font.kerning: false
+                        font.pixelSize: Math.max(12, dockWindow.iconSize * 0.4)
+                        fontSizeMode: Text.HorizontalFit
+                        minimumPixelSize: 10
                         font.weight: Font.ExtraBold
                         font.styleName: mt.fontStyleBold
                     }

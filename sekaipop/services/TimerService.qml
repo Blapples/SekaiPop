@@ -16,8 +16,8 @@ import qs.services
 //               rounds before the long break are in Settings -> Desktop -> Dock -> Timer);
 //               the next phase starts by itself.
 //
-// `shownMode` is what the dock's key shows: the pomodoro while it runs, else the timer, else the
-// stopwatch, else nothing (the key then just says "timer").
+// `shownMode` prioritizes running clocks (Pomodoro, timer, stopwatch), then paused
+// clocks in the same order. Reset and finished clocks leave the key clear.
 Singleton {
     id: root
 
@@ -25,13 +25,16 @@ Singleton {
     property real timerTotal: 300          // seconds, what Start counts down from
     property real timerLeft: 300
     property bool timerRunning: false
+    property bool timerPaused: false
     property real timerEnd: 0              // ms since epoch while running
 
     // ---- Stopwatch ----
     property real swElapsed: 0             // seconds
     property bool swRunning: false
+    property bool swPaused: false
     property real swStart: 0               // ms: when it (re)started, less what was already counted
     property var laps: []                  // [seconds, ...] newest first
+    property int lapCount: 0               // total recorded, including discarded old laps
 
     // ---- Pomodoro ----
     // phase: "focus" | "short" | "long"
@@ -39,6 +42,7 @@ Singleton {
     property int pomRound: 1               // which focus round we are in (1..rounds)
     property real pomLeft: root.phaseSeconds("focus")
     property bool pomRunning: false
+    property bool pomPaused: false
     property real pomEnd: 0
 
     readonly property real pomWorkMin: SettingsService.get("timer.pomWork")
@@ -55,9 +59,18 @@ Singleton {
         : (root.pomPhase === "short" ? "Short break" : "Long break")
 
     // ---- what the dock shows ----
-    readonly property string shownMode: root.pomRunning ? "pomodoro"
-        : (root.timerRunning ? "timer" : (root.swRunning ? "stopwatch" : ""))
-    readonly property bool anyRunning: root.shownMode !== ""
+    readonly property string shownMode: {
+        if (root.pomRunning) return "pomodoro"
+        if (root.timerRunning) return "timer"
+        if (root.swRunning) return "stopwatch"
+        if (root.pomPaused) return "pomodoro"
+        if (root.timerPaused) return "timer"
+        if (root.swPaused) return "stopwatch"
+        return ""
+    }
+    readonly property bool anyRunning: root.pomRunning || root.timerRunning || root.swRunning
+    readonly property bool hasTime: root.shownMode !== ""
+    readonly property bool shownPaused: root.hasTime && !root.anyRunning
     // 0..1, how full the key's fill is.
     readonly property real shownProgress: {
         if (root.shownMode === "pomodoro")
@@ -68,11 +81,17 @@ Singleton {
             return (root.swElapsed % 60) / 60
         return 0
     }
-    // Short text for the key: "24m" / "45s".
+    // Short text for the key; the hover flag shows the full clock.
     readonly property string shownText: {
         const s = root.shownMode === "pomodoro" ? root.pomLeft
             : (root.shownMode === "timer" ? root.timerLeft : root.swElapsed)
         return root.short(s, root.shownMode === "stopwatch")
+    }
+
+    readonly property string shownClock: {
+        const s = root.shownMode === "pomodoro" ? root.pomLeft
+            : (root.shownMode === "timer" ? root.timerLeft : root.swElapsed)
+        return root.clock(s, root.shownMode === "stopwatch")
     }
 
     function short(seconds, up) {
@@ -94,12 +113,21 @@ Singleton {
         return (h > 0 ? h + ":" + two(m) : two(m)) + ":" + two(r)
     }
 
+    // Stopwatch and lap readouts retain hundredths without changing countdown formatting.
+    function stopwatchClock(seconds) {
+        const hundredths = Math.floor(Math.max(0, Math.round(seconds * 1000)) / 10)
+        const fraction = hundredths % 100
+        return root.clock(Math.floor(hundredths / 100), true)
+            + "." + (fraction < 10 ? "0" : "") + fraction
+    }
+
     // ===== Timer =====
     function setTimerMinutes(min) {
         if (root.timerRunning)
             return
         root.timerTotal = Math.max(1, Math.round(min * 60))
         root.timerLeft = root.timerTotal
+        root.timerPaused = false
     }
 
     function addTimerMinute() {
@@ -113,16 +141,19 @@ Singleton {
         if (root.timerRunning) {
             root.timerLeft = Math.max(0, (root.timerEnd - Date.now()) / 1000)
             root.timerRunning = false
+            root.timerPaused = root.timerLeft > 0
         } else {
             if (root.timerLeft <= 0)
                 root.timerLeft = root.timerTotal
             root.timerEnd = Date.now() + root.timerLeft * 1000
             root.timerRunning = true
+            root.timerPaused = false
         }
     }
 
     function resetTimer() {
         root.timerRunning = false
+        root.timerPaused = false
         root.timerLeft = root.timerTotal
     }
 
@@ -131,9 +162,11 @@ Singleton {
         if (root.swRunning) {
             root.swElapsed = (Date.now() - root.swStart) / 1000
             root.swRunning = false
+            root.swPaused = true
         } else {
             root.swStart = Date.now() - root.swElapsed * 1000
             root.swRunning = true
+            root.swPaused = false
         }
     }
 
@@ -141,13 +174,16 @@ Singleton {
         if (!root.swRunning && root.swElapsed <= 0)
             return
         const now = root.swRunning ? (Date.now() - root.swStart) / 1000 : root.swElapsed
+        root.lapCount++
         root.laps = [now].concat(root.laps).slice(0, 20)
     }
 
     function resetStopwatch() {
         root.swRunning = false
+        root.swPaused = false
         root.swElapsed = 0
         root.laps = []
+        root.lapCount = 0
     }
 
     // ===== Pomodoro =====
@@ -155,14 +191,17 @@ Singleton {
         if (root.pomRunning) {
             root.pomLeft = Math.max(0, (root.pomEnd - Date.now()) / 1000)
             root.pomRunning = false
+            root.pomPaused = root.pomLeft > 0
         } else {
             root.pomEnd = Date.now() + root.pomLeft * 1000
             root.pomRunning = true
+            root.pomPaused = false
         }
     }
 
     function resetPomodoro() {
         root.pomRunning = false
+        root.pomPaused = false
         root.pomPhase = "focus"
         root.pomRound = 1
         root.pomLeft = root.phaseSeconds("focus")
@@ -170,6 +209,7 @@ Singleton {
 
     // To the next phase (what happens by itself at zero). `keepRunning`: carry on counting.
     function nextPhase(keepRunning) {
+        const wasActive = root.pomRunning || root.pomPaused
         if (root.pomPhase === "focus") {
             if (root.pomRound >= root.pomRounds)
                 root.pomPhase = "long"
@@ -189,6 +229,7 @@ Singleton {
         } else {
             root.pomRunning = false
         }
+        root.pomPaused = !keepRunning && wasActive
     }
 
     // ===== telling you =====
@@ -211,6 +252,7 @@ Singleton {
                 root.timerLeft = Math.max(0, (root.timerEnd - now) / 1000)
                 if (root.timerLeft <= 0) {
                     root.timerRunning = false
+                    root.timerPaused = false
                     root.alarm("Timer finished", root.clock(root.timerTotal, false) + " is up")
                 }
             }
