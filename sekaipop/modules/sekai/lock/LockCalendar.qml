@@ -387,7 +387,8 @@ Item {
         id: caption
         x: root.rectA.x + root.px(26)
         y: root.rectA.y + root.rectA.height - height - root.px(30)
-        width: Math.min(captionRow.implicitWidth + root.px(44), root.px(620))
+        width: Math.max(0, Math.min(captionRow.naturalWidth + root.px(44),
+                                   root.px(620), root.rectA.width - root.px(52)))
         height: root.px(50)
         opacity: media.present ? 1 : 0
         visible: opacity > 0.001
@@ -413,12 +414,25 @@ Item {
             ring: root.ringW
             shadowDy: root.shadowSmall
 
-            Row {
+            Item {
                 id: captionRow
                 anchors.centerIn: parent
-                spacing: root.px(10)
+                // The transition renders a hidden copy into a texture. Effective
+                // visibility there must not determine the metadata width budget.
+                readonly property bool hasArtist: caption.shownArtist !== ""
+                readonly property real spacing: root.px(10)
+                height: Math.max(captionIcon.height, titleText.implicitHeight,
+                                 captionRow.hasArtist ? artistText.implicitHeight : 0)
+                // Size the plate from natural text widths, then share its actual
+                // inner width. A long artist must not push the centred row outside it.
+                readonly property real naturalWidth: captionIcon.width + titleText.implicitWidth
+                    + (captionRow.hasArtist ? artistText.implicitWidth + spacing * 2 : spacing)
+                readonly property real textWidth: Math.max(0, width - captionIcon.width
+                    - spacing * (captionRow.hasArtist ? 2 : 1))
+                width: Math.max(0, caption.width - root.px(44))
 
                 MaterialIcon {
+                    id: captionIcon
                     anchors.verticalCenter: parent.verticalCenter
                     name: caption.shownPlaying ? "music_note" : "pause"
                     size: root.px(26)
@@ -426,8 +440,10 @@ Item {
                 }
 
                 Text {
+                    id: titleText
+                    x: captionIcon.x + captionIcon.width + captionRow.spacing
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, root.px(620) - root.px(150))
+                    width: Math.min(implicitWidth, Math.max(0, captionRow.textWidth - artistText.width))
                     elide: Text.ElideRight
                     text: caption.shownTitle
                     color: root.ink
@@ -438,8 +454,13 @@ Item {
                 }
 
                 Text {
+                    id: artistText
+                    x: titleText.x + titleText.width + captionRow.spacing
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: caption.shownArtist !== ""
+                    visible: captionRow.hasArtist
+                    width: captionRow.hasArtist ? Math.min(implicitWidth, Math.max(captionRow.textWidth * 0.4,
+                        captionRow.textWidth - titleText.implicitWidth)) : 0
+                    elide: Text.ElideRight
                     text: caption.shownArtist
                     color: LockPalette.calMuted
                     font.family: Theme.fontFamily
