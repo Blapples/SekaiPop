@@ -2600,10 +2600,13 @@ Scope {
                     // then its screen's middle (flipCX / flipCY) travels to the
                     // middle of the monitor and its size follows the turn
                     // (all of it the plain old numbers while stage.flip is 0).
-                    x: stage.buzzX + stage.flipCX - restRect.x - phone.screenCenterX * stage.quickScale + stage.snapX
-                    y: stage.lift + stage.rise + stage.buzzY + stage.flipCY - restRect.y - phone.screenCenterY * stage.quickScale + stage.snapY
+                    // x / y / scale change many times per frame during a turn (flip, lift,
+                    // buzz... each feed them), and every change walks all the items below.
+                    // Delayed: once per frame.
+                    Binding { target: phone; property: "x"; value: stage.buzzX + stage.flipCX - restRect.x - phone.screenCenterX * stage.quickScale + stage.snapX; delayed: true }
+                    Binding { target: phone; property: "y"; value: stage.lift + stage.rise + stage.buzzY + stage.flipCY - restRect.y - phone.screenCenterY * stage.quickScale + stage.snapY; delayed: true }
+                    Binding { target: phone; property: "scale"; value: stage.quickScale; delayed: true }
                     transformOrigin: Item.TopLeft
-                    scale: stage.quickScale
 
                     // Gone once the Settings have taken its place.
                     opacity: stage.quickAlpha
