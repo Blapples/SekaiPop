@@ -202,12 +202,18 @@ def fetch(url, extra_headers=None, timeout=30):
 
 def _raw_get(url, timeout=30):
     """Return raw bytes + content-type for image proxy."""
-    r = _get(url, HEADERS, timeout)
+    headers = HEADERS
+    if urlparse(url).hostname == "uploads.mangadex.org":
+        # MangaDex's cover host answers a browser-style request (Firefox user agent, page
+        # headers) with a redirect instead of the picture; the honest agent the API calls use
+        # gets the image.
+        headers = {"User-Agent": MD_UA, "Accept": "image/*,*/*;q=0.8"}
+    r = _get(url, headers, timeout)
     if r.status_code in (429, 500, 502, 503, 504):
         # A CDN that is throttling or briefly down: one more try before the cover
         # reaches the panel as a failed image.
         time.sleep(0.6)
-        r = _get(url, HEADERS, timeout)
+        r = _get(url, headers, timeout)
     r.raise_for_status()
     return r.content, r.headers.get("Content-Type", "image/jpeg")
 

@@ -6,6 +6,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("ms", os.path.join(HERE, "..", "manga_server.py"))
 ms = importlib.util.module_from_spec(spec); spec.loader.exec_module(ms)
 real_md_get = ms.md_get
+real_raw_get = ms._raw_get
 
 tmp = tempfile.mkdtemp()
 ms.DATA_DIR       = tmp
@@ -14,6 +15,7 @@ ms.PROVIDER_FILE  = os.path.join(tmp, "provider.json")
 ms.DOWNLOADS_DIR  = os.path.join(tmp, "downloads"); os.makedirs(ms.DOWNLOADS_DIR)
 ms.FAVORITES_FILE = os.path.join(tmp, "favorites.json")
 ms.MD_MIN_GAP     = 0
+ms.SW_ENABLED     = False        # this machine may have Suwayomi set up; the test counts two sources
 
 UUID  = "11111111-1111-1111-1111-111111111111"
 UUID2 = "22222222-2222-2222-2222-222222222222"
@@ -290,5 +292,19 @@ assert call("/mdpage?c=md-x&i=a")[0] == 400
 ms.md_latest = lambda page: {"results": [{"id": "md-z"}], "hasMore": False, "nextPage": page + 1}
 assert json.loads(call("/latest?page=1")[1])["results"][0]["id"] == "md-z"
 srv.shutdown()
+
+# a cover from uploads.mangadex.org is asked for with the honest agent (a Firefox one gets a
+# redirect, not the picture); every other host keeps the browser-style headers
+seen = []
+class FakeResp:
+    status_code = 200
+    headers = {"Content-Type": "image/jpeg"}
+    content = b"JPEG"
+    def raise_for_status(self): pass
+ms._get = lambda url, headers, timeout: (seen.append((url, headers)), FakeResp())[1]
+assert real_raw_get("https://uploads.mangadex.org/covers/x/y.jpg.512.jpg") == (b"JPEG", "image/jpeg")
+assert seen[-1][1]["User-Agent"] == ms.MD_UA, seen
+real_raw_get("https://temp.compsci88.com/cover/small/x.webp")
+assert seen[-1][1]["User-Agent"] == ms.HEADERS["User-Agent"], seen
 
 print("test_mangadex: ok")
