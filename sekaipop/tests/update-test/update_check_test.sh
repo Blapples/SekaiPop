@@ -50,4 +50,26 @@ expect "repo layout: git mode" "$($G info)" "git=yes"
 expect "repo layout: rev is the upstream head" "$($G check)" "rev="
 cd "$t/work" && git fetch -q && echo "// local" >> sekaipop/shell.qml && git commit -qam local && git push -q origin main
 expect "repo layout: current after push" "$($G check)" "status=current"
+# ---- system update: SYSTEM-REV (shipped with the files) against the number install.sh recorded
+expect "system: no SYSTEM-REV, nothing recommended" "$($S system)" "system=ok"
+printf '2\nnew keybinds\n\nnew packages: scrcpy\n' > "$inst/SYSTEM-REV"
+expect "system: shipped above applied (none = 0) is needed" "$($S system)" "system=needed"
+expect "system: shipped and applied are printed" "$($S system)" "shipped=2"
+expect "system: the reasons come back joined by |, blank lines dropped" "$($S system)" "note=new keybinds|new packages: scrcpy"
+mkdir -p "$HOME/.config/sekaipop" && echo 2 > "$HOME/.config/sekaipop/system-rev"
+expect "system: applied = shipped is ok" "$($S system)" "system=ok"
+printf '3\n' > "$inst/SYSTEM-REV"
+expect "system: a higher number again is needed, with no reasons" "$($S system)" "note="
+expect "system: ... and needed" "$($S system)" "system=needed"
+printf 'junk\nsome line\n' > "$inst/SYSTEM-REV"
+expect "system: a first line that is no number counts as 0" "$($S system)" "shipped=0"
+# sysrun: an installed copy has no install.sh, so it runs one from a fresh clone of the same repo and branch;
+# a git checkout runs its own.
+(cd "$t/work" && printf 'echo "$0" > "$SYSRAN"\n' > install.sh && git add -A && git commit -qm sys && git push -q origin main)
+SYSRAN="$t/ran1" $S sysrun >/dev/null 2>&1; rc=$?
+[ "$rc" = 0 ] && case "$(cat "$t/ran1" 2>/dev/null)" in *sekaipop-system-*install.sh) ok "sysrun: installed copy runs install.sh from a fresh clone" ;; *) bad "sysrun (managed) ran: $(cat "$t/ran1" 2>/dev/null)" ;; esac || bad "sysrun managed exit $rc"
+SYSRAN="$t/ran2" $G sysrun >/dev/null 2>&1; rc=$?
+[ "$rc" = 0 ] && [ "$(cat "$t/ran2" 2>/dev/null)" = "$t/work/install.sh" ] && ok "sysrun: a git checkout runs its own install.sh" || bad "sysrun (git) exit $rc, ran: $(cat "$t/ran2" 2>/dev/null)"
+SEKAIPOP_REPO=/nonexistent SYSRAN="$t/ran3" $S sysrun >/dev/null 2>&1; [ $? != 0 ] && [ ! -e "$t/ran3" ] && ok "sysrun: a repo that can't be cloned fails and runs nothing" || bad "sysrun bad repo"
+[ -z "$(ls -d "${TMPDIR:-/tmp}"/sekaipop-system-* 2>/dev/null)" ] && ok "sysrun: the temporary clone is removed" || bad "temporary clone left behind"
 [ $fail = 0 ] && echo "all passed" || { echo "FAILED"; exit 1; }

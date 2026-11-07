@@ -13,6 +13,15 @@
 #   update-check.sh log      commits that an update would bring, one per line:
 #                            <hash>|<subject>|<age>   (git checkout only)
 #   update-check.sh apply    bring the shell up to date; exits 0 only if it worked
+#   update-check.sh system   print  system=needed|ok / shipped=<n> / applied=<n> / note=<a|b|c>:
+#                            does this version ask for an install.sh run (new Hyprland keybinds
+#                            or rules, new packages)? `shipped` is the first line of SYSTEM-REV
+#                            next to shell.qml (its other lines are the reasons, shown as `note`);
+#                            `applied` is the number install.sh last recorded in
+#                            ~/.config/sekaipop/system-rev (none = 0). needed = shipped > applied.
+#   update-check.sh sysrun   run install.sh (what the Update system key opens in a terminal):
+#                            the clone's own on a git checkout, else one from a fresh clone of
+#                            the same repo and branch
 #
 # Where it looks, in order:
 #   1. A git checkout: this folder is a clone itself, or it is the sekaipop/ folder
@@ -197,8 +206,32 @@ case "$cmd" in
             exit 1
         fi
         ;;
+    system)
+        shipped=$(head -n 1 "$here/SYSTEM-REV" 2>/dev/null | tr -d ' \r')
+        case "$shipped" in ''|*[!0-9]*) shipped=0 ;; esac
+        applied=$(head -n 1 "$cfgdir/system-rev" 2>/dev/null | tr -d ' \r')
+        case "$applied" in ''|*[!0-9]*) applied=0 ;; esac
+        if [ "$shipped" -gt "$applied" ]; then echo "system=needed"; else echo "system=ok"; fi
+        echo "shipped=$shipped"
+        echo "applied=$applied"
+        printf 'note=%s\n' "$(tail -n +2 "$here/SYSTEM-REV" 2>/dev/null | tr -d '\r' | sed '/^[[:space:]]*$/d' | paste -sd'|' -)"
+        ;;
+    sysrun)
+        if is_git && [ -f "$root/install.sh" ]; then
+            exec bash "$root/install.sh"
+        fi
+        have_git || { echo "git isn't installed, so there is no install.sh to run"; exit 1; }
+        tmp=$(mktemp -d "${TMPDIR:-/tmp}/sekaipop-system-XXXXXX") || { echo "couldn't make a temporary folder"; exit 1; }
+        trap 'rm -rf "$tmp"' EXIT
+        echo "downloading $ref from $repo"
+        limit 180 git clone --quiet --depth 1 --branch "$ref" "$repo" "$tmp/src" \
+            || { echo "couldn't download install.sh"; exit 1; }
+        [ -f "$tmp/src/install.sh" ] || { echo "the download has no install.sh (wrong repo or branch?)"; exit 1; }
+        bash "$tmp/src/install.sh"
+        exit $?
+        ;;
     *)
-        echo "usage: $0 info|check|log|apply|seen" >&2
+        echo "usage: $0 info|check|log|apply|seen|system|sysrun" >&2
         exit 2
         ;;
 esac

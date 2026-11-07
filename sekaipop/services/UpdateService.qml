@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.modules.common
+import "../modules/common/functions/Extras.js" as X
 
 // What version this shell is, whether a newer one exists, and what changed.
 // The work is scripts/system/update-check.sh (a git checkout, an installed copy
@@ -66,6 +67,27 @@ Singleton {
     // Kept apart from updateMessage so the page can show it whole, not elided
     // into a button's subtitle (issue #21).
     property string updateError: ""
+
+    // ===== system update (Hyprland config, packages) =====
+    // Update now replaces only the shell's own files. When a version also needs something outside
+    // them (new keybinds or rules in the Hyprland config, new packages) it ships a higher number
+    // in SYSTEM-REV, with the reasons under it, and install.sh records the number it applied in
+    // ~/.config/sekaipop/system-rev. A shipped number above the applied one is a recommendation:
+    // About / Update shows an Update system key, which runs install.sh in a terminal (it asks
+    // before it changes anything, and a Hyprland config it replaces is backed up).
+    property bool systemNeeded: false
+    // The reasons, one string each (the lines under the number in SYSTEM-REV).
+    property var systemNote: []
+    property bool systemRunning: false
+
+    function updateSystem() {
+        if (sysRunner.running)
+            return
+        root.systemRunning = true
+        const quoted = "'" + root.script.replace(/'/g, "'\\''") + "'"
+        sysRunner.command = X.terminalArgv("sh " + quoted + " sysrun")
+        sysRunner.running = true
+    }
 
     readonly property string script: Directories.script("system/update-check.sh")
 
@@ -165,6 +187,30 @@ Singleton {
                 root.status = "error"
                 root.reason = "the update check failed"
             }
+        }
+    }
+
+    // Local and cheap: reads SYSTEM-REV and the number install.sh last recorded.
+    Process {
+        id: sysChecker
+        running: true
+        command: ["sh", root.script, "system"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const kv = root.parseKv(text)
+                root.systemNeeded = kv.system === "needed"
+                root.systemNote = kv.note ? kv.note.split("|").filter(s => s !== "") : []
+            }
+        }
+    }
+
+    // install.sh in a terminal. When the terminal is closed, ask again: install.sh wrote its number
+    // if it worked, and the key goes away; if it failed or was stopped, the key stays.
+    Process {
+        id: sysRunner
+        onExited: {
+            root.systemRunning = false
+            sysChecker.running = true
         }
     }
 

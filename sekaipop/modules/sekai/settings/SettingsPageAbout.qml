@@ -237,6 +237,28 @@ SettingsPage {
 
         Text {
             width: page.fullWidth
+            visible: UpdateService.systemNeeded
+            wrapMode: Text.WordWrap
+            text: "This version also needs things outside the shell's own files:\n"
+                + UpdateService.systemNote.map(s => "\u2022 " + s).join("\n")
+                + (UpdateService.canApply ? "" : "\nRun install.sh again to get them.")
+            color: mt.pInkSub
+            font.family: mt.fontFamily
+            font.pixelSize: 15
+            font.weight: Font.DemiBold
+        }
+
+        SettingAction {
+            visible: UpdateService.systemNeeded && UpdateService.canApply
+            icon: "terminal"
+            label: "Update system"
+            detail: UpdateService.systemRunning ? "Running in a terminal…" : "Hyprland config and packages, in a terminal"
+            busy: UpdateService.systemRunning
+            onActivated: UpdateService.updateSystem()
+        }
+
+        Text {
+            width: page.fullWidth
             wrapMode: Text.WordWrap
             text: "The shell's own update. Your plugins have their own card just below, with the same check, commits and Update; the two settings here are theirs too."
             color: mt.pInkSub

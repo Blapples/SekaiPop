@@ -631,7 +631,7 @@ Item {
                 icon: modelData.icon
                 label: modelData.longLabel !== undefined ? modelData.longLabel : modelData.label
                 subtitle: modelData.sub
-                badge: modelData.id === "about" && UpdateService.status === "behind" && !UpdateService.unknown
+                badge: modelData.id === "about" && ((UpdateService.status === "behind" && !UpdateService.unknown) || UpdateService.systemNeeded)
                 onClicked: face.go(index)
             }
         }

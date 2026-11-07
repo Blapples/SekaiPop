@@ -365,6 +365,13 @@ if [ "$DRY" = 0 ] && [ -f "$HERE/check-deps.sh" ]; then
     printf '\n'; SEKAIPOP_DIR="$QS_DEST" bash "$HERE/check-deps.sh" --core
 fi
 
+# Remember which system revision (Hyprland config, packages; SYSTEM-REV next to shell.qml) this run
+# brought, so About / Update stops recommending "Update system". Not on a dry run, and not when
+# something failed (the key stays, so it can be tried again).
+if [ "$DRY" = 0 ] && [ "${#FAILED[@]}" -eq 0 ] && [ -f "$QS_DEST/SYSTEM-REV" ]; then
+    mkdir -p "$CFG/sekaipop" && head -n 1 "$QS_DEST/SYSTEM-REV" | tr -d ' \r' > "$CFG/sekaipop/system-rev" 2>/dev/null || true
+fi
+
 # A shell that is already running keeps the old files: the folder it watches was moved
 # aside, and a reload inside the same process can fail on Qt state left from them
 # ("FaceKey is not a type", issue #79). So it is restarted, as a new process.

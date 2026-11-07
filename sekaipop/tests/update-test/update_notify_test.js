@@ -130,4 +130,30 @@ ok("the About tab's badge is not lit for 'can't tell'", () => {
     assert(/UpdateService\.status === "behind" && !UpdateService\.unknown/.test(f));
 });
 
+ok("system update: the service reads `system`, asks again when install.sh's terminal closes, and runs sysrun in a terminal", () => {
+    assert(/command: \["sh", root\.script, "system"\]/.test(svc));
+    assert(/root\.systemNeeded = kv\.system === "needed"/.test(svc));
+    assert(/kv\.note \? kv\.note\.split\("\|"\)/.test(svc));
+    assert(/X\.terminalArgv\("sh " \+ quoted \+ " sysrun"\)/.test(svc));
+    const exit = svc.slice(svc.indexOf("id: sysRunner"));
+    assert(/root\.systemRunning = false/.test(exit) && /sysChecker\.running = true/.test(exit));
+    assert(/Extras\.js" as X/.test(svc));
+});
+ok("system update: the key shows only when needed and applicable; the About tab's badge also lights for it", () => {
+    const a = read("modules/sekai/settings/SettingsPageAbout.qml");
+    assert(/visible: UpdateService\.systemNeeded && UpdateService\.canApply[\s\S]{0,80}label: "Update system"/.test(a));
+    assert(/onActivated: UpdateService\.updateSystem\(\)/.test(a));
+    assert(/UpdateService\.systemNote\.map/.test(a));
+    const f = read("modules/sekai/settings/SettingsFace.qml");
+    assert(/\|\| UpdateService\.systemNeeded/.test(f));
+});
+ok("system update: install.sh records the number after a clean, real run, and SYSTEM-REV starts with a number", () => {
+    const inst = fs.readFileSync(path.join(top, "..", "install.sh"), "utf8");
+    assert(/\[ "\$DRY" = 0 \] && \[ "\$\{#FAILED\[@\]\}" -eq 0 \] && \[ -f "\$QS_DEST\/SYSTEM-REV" \]/.test(inst));
+    assert(/\$CFG\/sekaipop\/system-rev/.test(inst));
+    const rev = read("SYSTEM-REV").split("\n");
+    assert(/^[0-9]+$/.test(rev[0]) && rev.slice(1).some(l => l.trim() !== ""));
+    assert(!rev.slice(1).some(l => l.includes("|") || l.includes("=")));
+});
+
 console.log("all " + n + " passed");
