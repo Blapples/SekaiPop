@@ -104,7 +104,7 @@ Scope {
     // went false. The cheatsheet board stays one layer down until this is false
     // (not just until `up` is), or it jumps back over the phone the moment the
     // phone starts to leave and the phone seems to dive behind it.
-    readonly property bool onScreen: win.visible
+    readonly property bool onScreen: win.shown
 
     // ===== the phone's screens =====
     // AppSource.qml: the app index the Apps screen searches and launches from.
@@ -411,7 +411,7 @@ Scope {
                 settingsOpen = false
                 setRoute(PR.go(phoneRoute, faceScreen))
                 turnTo(0)
-            } else if (!open && (!screen || screen === targetScreen) && stage.flip > 0.5 && win.visible) {
+            } else if (!open && (!screen || screen === targetScreen) && stage.flip > 0.5 && win.shown) {
                 // The Settings stand on their own (SUPER + I) and the Quick Panel is asked
                 // for (SUPER + N): the same turn back, not a cut. The Quick Panel's phone is
                 // put at its resting spot, upright, without its pull-out (`skipEnter`), and
@@ -539,7 +539,7 @@ Scope {
             settingsExit.stop()
             flipPrep.stop()
             flipAnim.stop()
-            if (!win.visible) {
+            if (!win.shown) {
                 stage.sPop = 0
                 stage.sTilt = 1
                 stage.sAlpha = 0
@@ -728,7 +728,7 @@ Scope {
         const want = faceScreen === "apps" ? 1 : 0
         routeAnim.stop()
         routePrep.stop()
-        if (!win.visible) {
+        if (!win.shown) {
             routeK = want
             return
         }
@@ -1347,7 +1347,7 @@ Scope {
     SystemClock {
         id: clock
         precision: SystemClock.Minutes
-        enabled: win.visible
+        enabled: win.shown
     }
 
     // ===== frame-time probe =====
@@ -1359,7 +1359,7 @@ Scope {
     FrameAnimation {
         id: perfTick
 
-        running: root.perfLogMs > 0 && win.visible
+        running: root.perfLogMs > 0 && win.shown
 
         property int total: 0
         property int slow: 0
@@ -1706,7 +1706,7 @@ Scope {
     // phone closed itself. Without the grab the phone just works over the board (it is
     // drawn above it, see `coverCheat`); the board's own click-away still closes the
     // board, and the grab comes back when the board is gone.
-    readonly property bool grabWanted: (open || settingsOpen) && win.visible && !PanelImages.busy
+    readonly property bool grabWanted: (open || settingsOpen) && win.shown && !PanelImages.busy
                                        && !root.useCatcher && !root.coverCheat
 
     onGrabWantedChanged: {
@@ -1773,7 +1773,7 @@ Scope {
         id: catcher
 
         screen: root.targetScreen
-        visible: root.useCatcher && win.visible
+        visible: root.useCatcher && win.shown
         color: "transparent"
         exclusionMode: ExclusionMode.Ignore
         WlrLayershell.layer: WlrLayer.Top
@@ -1866,7 +1866,21 @@ Scope {
         id: win
 
         screen: root.targetScreen
-        visible: root.up || stage.lift < stage.hiddenLift || root.settingsShown
+        // Whether the phone is on screen (or still on its way). This is what the rest of the
+        // file used to read as `win.visible`.
+        readonly property bool shown: root.up || stage.lift < stage.hiddenLift || root.settingsShown
+        // The window stays mapped once it has been shown. Quickshell tears a window down when it
+        // is hidden and builds a new one when it is shown again (new surface, new GL context,
+        // shaders linked again, the whole item tree synced and drawn once more): about 250-330 ms
+        // on the first frame of every open, however short the time since it closed. While the
+        // phone is down it sits below the screen edge, draws nothing, and its input mask is
+        // outside the window.
+        // It is not mapped at startup, only from the first open: a window mapped before the
+        // phone has ever been laid out leaves the banner and avatar layers (the masked
+        // pictures) blank for good.
+        property bool everShown: false
+        onShownChanged: if (shown) everShown = true
+        visible: shown || everShown
         color: "transparent"
 
         // Sits on the bottom edge, centered (no left / right anchor), and
@@ -2364,7 +2378,7 @@ Scope {
             // while hidden it just snaps.
             property real rise: root.lowLift
             Behavior on rise {
-                enabled: win.visible
+                enabled: win.shown
                 NumberAnimation {
                     duration: 320
                     easing.type: Easing.OutCubic
@@ -2443,7 +2457,7 @@ Scope {
             // the window was small therefore sat at the *old* hiddenLift;
             // make the window bigger (scaling 80% -> 100%) and that old
             // number is suddenly less than the new one, which is exactly
-            // what `win.visible` reads as "still on its way out" — so the
+            // what `win.shown` reads as "still on its way out" — so the
             // window came back and showed the phone. While it's put away
             // and nothing is animating, keep it at the current
             // hiddenLift so a resize can't leave it stranded above it.
@@ -2451,8 +2465,8 @@ Scope {
             // Not while `lift` still has its start-up value (100000 = never
             // shown, far off the screen already; onUpChanged pulls it down
             // to hiddenLift the first time the phone comes up). The first
-            // hiddenLift comes out while win.visible is being worked out,
-            // and writing `lift` from in here - which win.visible reads -
+            // hiddenLift comes out while win.shown is being worked out,
+            // and writing `lift` from in here - which win.shown reads -
             // is what Qt logged as "Binding loop detected for property
             // visible" on every start.
             onHiddenLiftChanged: {
@@ -2586,10 +2600,13 @@ Scope {
                     // then its screen's middle (flipCX / flipCY) travels to the
                     // middle of the monitor and its size follows the turn
                     // (all of it the plain old numbers while stage.flip is 0).
-                    x: stage.buzzX + stage.flipCX - restRect.x - phone.screenCenterX * stage.quickScale + stage.snapX
-                    y: stage.lift + stage.rise + stage.buzzY + stage.flipCY - restRect.y - phone.screenCenterY * stage.quickScale + stage.snapY
+                    // x / y / scale change many times per frame during a turn (flip, lift,
+                    // buzz... each feed them), and every change walks all the items below.
+                    // Delayed: once per frame.
+                    Binding { target: phone; property: "x"; value: stage.buzzX + stage.flipCX - restRect.x - phone.screenCenterX * stage.quickScale + stage.snapX; delayed: true }
+                    Binding { target: phone; property: "y"; value: stage.lift + stage.rise + stage.buzzY + stage.flipCY - restRect.y - phone.screenCenterY * stage.quickScale + stage.snapY; delayed: true }
+                    Binding { target: phone; property: "scale"; value: stage.quickScale; delayed: true }
                     transformOrigin: Item.TopLeft
-                    scale: stage.quickScale
 
                     // Gone once the Settings have taken its place.
                     opacity: stage.quickAlpha
@@ -2598,7 +2615,7 @@ Scope {
 
                     // Closed for a while: the phone gives its layer buffers back
                     // (PhoneBody `warm`); they are back before the first frame.
-                    windowShown: win.visible
+                    windowShown: win.shown
 
                     // Drawn on the light settings while it moves (and while
                     // it's out of sight, so the first frame of the pull-out
@@ -2612,7 +2629,7 @@ Scope {
                     // smooth but visibly pixelated the frame for
                     // something that small.
                     moving: enterAnim.running || exitAnim.running
-                            || exitDelay.running || !win.visible || stage.flipping || ring.running
+                            || exitDelay.running || !win.shown || stage.flipping || ring.running
                             || root.routing
                     busy: PanelActivity.busy
 
@@ -3111,7 +3128,7 @@ Scope {
                 tilt: stage.sTilt
                 wob: stage.wob
 
-                moving: settingsEnter.running || settingsExit.running || stage.flipping || ring.running || !win.visible
+                moving: settingsEnter.running || settingsExit.running || stage.flipping || ring.running || !win.shown
                 busy: PanelActivity.busy
                 turning: stage.flipping
                 turnHold: root.ringKeepsLite && ring.running

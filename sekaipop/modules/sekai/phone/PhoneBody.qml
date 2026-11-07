@@ -981,9 +981,8 @@ Item {
                 visible: root.powerButton && (root.flat || root.faceDirect) && !root.landscape
                 width: root.faceWidth
                 height: root.faceHeight
-                transform: Matrix4x4 {
-                    matrix: root.frontMatrix
-                }
+                transform: Matrix4x4 { id: fm1 }
+                Binding { target: fm1; property: "matrix"; value: root.frontMatrix; delayed: true }
 
                 // Its underside: the same shape a few units lower, dark, so the button
                 // reads as standing out of the edge rather than lying on it.
@@ -1047,9 +1046,8 @@ Item {
                 // and the middle of the front where the owner wants it (directCenterX /
                 // directCenterY, the resting screen's middle unless set). The owner
                 // puts the result on a whole device pixel.
-                transform: Matrix4x4 {
-                    matrix: root.frontMatrix
-                }
+                transform: Matrix4x4 { id: fm2 }
+                Binding { target: fm2; property: "matrix"; value: root.frontMatrix; delayed: true }
 
                 // Drawn flat into a texture first (smoothed, at the size it will be
                 // in the big picture above), then tilted: crisp edges and text on

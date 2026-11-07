@@ -291,10 +291,10 @@ Item {
     Item {
         id: pivot
 
-        x: root.centerX + root.snapX
-        y: root.centerY + root.snapY
-        scale: (root.popFrom + (1 - root.popFrom) * root.pop) * root.turnSize
         opacity: root.shownOpacity
+        Binding { target: pivot; property: "scale"; value: (root.popFrom + (1 - root.popFrom) * root.pop) * root.turnSize; delayed: true }
+        Binding { target: pivot; property: "y"; value: root.centerY + root.snapY; delayed: true }
+        Binding { target: pivot; property: "x"; value: root.centerX + root.snapX; delayed: true }
         visible: opacity > 0.001
 
         PhoneBody {
@@ -313,10 +313,10 @@ Item {
             // Not up: its layer buffers are given back after a while (PhoneBody `warm`).
             windowShown: root.active
 
-            x: -root.anchorX * root.fit
-            y: -root.anchorY * root.fit
             transformOrigin: Item.TopLeft
-            scale: root.fit
+            Binding { target: phone; property: "scale"; value: root.fit; delayed: true }
+            Binding { target: phone; property: "y"; value: -root.anchorY * root.fit; delayed: true }
+            Binding { target: phone; property: "x"; value: -root.anchorX * root.fit; delayed: true }
 
             // (Drawn on the light settings while it straightens, too.)
             moving: root.moving || root.straightMoving
