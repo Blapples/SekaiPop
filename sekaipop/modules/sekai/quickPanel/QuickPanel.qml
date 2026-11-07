@@ -1886,6 +1886,18 @@ Scope {
     }
 
     // ===== the panel =====
+    // Wearing a preset or changing the avatar / banner / phone picture: see `unmapSoon`.
+    Connections {
+        target: PanelImages
+        function onAvatarChanged() { win.unmapSoon() }
+        function onBannerChanged() { win.unmapSoon() }
+        function onPhoneChanged() { win.unmapSoon() }
+    }
+    Connections {
+        target: DesktopPresetService
+        function onLastNameChanged() { win.unmapSoon() }
+    }
+
     PanelWindow {
         id: win
 
@@ -1906,10 +1918,26 @@ Scope {
         // apps, behind) a fullscreen window keeps getting in the way, so it goes away when the
         // phone closes then, as it always did, and comes back with the next open.
         property bool keepAlive: false
+        // A preset (or a new picture) changed what the phone shows while its window was kept
+        // mapped: the banner and avatar layers came out loaded but blank until qs restarted.
+        // So after such a change the window is let go once the phone is away (at once if it
+        // already is), and the next open builds it fresh, as the first open does. That open
+        // pays the ~300 ms a first frame costs; the ones after it are quick again.
+        property bool unmapWhenHidden: false
         onShownChanged: {
-            if (shown)
+            if (shown) {
                 keepAlive = true
-            else if (root.fullscreenUp)
+            } else if (unmapWhenHidden) {
+                unmapWhenHidden = false
+                keepAlive = false
+            } else if (root.fullscreenUp) {
+                keepAlive = false
+            }
+        }
+        function unmapSoon() {
+            if (shown)
+                unmapWhenHidden = true
+            else
                 keepAlive = false
         }
         Connections {
