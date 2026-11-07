@@ -2238,9 +2238,12 @@ Scope {
         }
 
         // Nothing left to see: forget the low alert spot so the next
-        // opening is the usual one.
-        onVisibleChanged: {
-            if (!visible) {
+        // opening is the usual one. (This used to be `onVisibleChanged`, when the item
+        // went invisible with the window. The window now stays mapped, so it is keyed to
+        // the phone being gone, which is the same moment.)
+        readonly property bool gone: !win.shown
+        onGoneChanged: {
+            if (gone) {
                 root.alertMode = false
                 root.peekMode = false
                 // Gone: the next time it comes up it is Quick again, with an empty
