@@ -2907,7 +2907,7 @@ Scope {
                         }
                         onWifiConnectRequested: (ssid, password) => root.source.connectWifi(ssid, password)
                         onWifiDisconnectRequested: ssid => root.source.disconnectWifi(ssid)
-                        onWifiForgetRequested: ssid => root.source.forgetWifi(ssid)
+                        onWifiForgetRequested: uuid => root.source.forgetWifi(uuid)
                         onBluetoothScanRequested: root.source.scanBluetooth(true)
                         onBluetoothAdvancedRequested: {
                             root.source.openBluetoothSettings()

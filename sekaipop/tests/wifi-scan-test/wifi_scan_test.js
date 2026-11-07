@@ -66,8 +66,8 @@ assert.strictEqual(s.wifiSeen.find(n => n.ssid === "Home").connected, true)
 
 // a name with colons in it survives (the shell joins it back), an empty name is dropped
 s = makeSource()
-s.applyWifiList([line(50, "WPA2", "", "a:b:c"), line(60, "WPA2", "", "")].join("\n"))
-assert.deepStrictEqual(s.wifiSeen.map(n => n.ssid), ["a:b:c"])
+s.applyWifiList([line(50, "WPA2", "", "a:b|c"), line(60, "WPA2", "", "")].join("\n"))
+assert.deepStrictEqual(s.wifiSeen.map(n => n.ssid), ["a:b|c"])
 
 // a second read a second later: a signal moving a little does not shuffle the rows
 s = makeSource()
@@ -84,9 +84,9 @@ assert.strictEqual(s.wifiSeen.length, 4)
 // the list the dialog shows is only replaced when something it shows changed (3 signal bars, lock, connected, saved)
 const ann = src.match(/function annotateWifi\(\) \{([\s\S]*?)\n    \}\n\n    function fetchWifiSaved/)
 assert.ok(ann, "annotateWifi found")
-const a = { wifiSaved: { Home: "Home" }, wifiNetworks: [], wifiSeen: [] }
+const a = { wifiSaved: { [JSON.stringify(["Home", "personal"])]: { uuid: "home-uuid", active: false } }, wifiNetworks: [], wifiSeen: [] }
 a.annotate = new Function("ctx", "with (ctx) {" + ann[1] + "}").bind(null, a)
-const net = (ssid, signal, extra) => ({ ssid, signal, secured: true, connected: false, ...extra })
+const net = (ssid, signal, extra) => ({ ssid, signal, secured: true, securityKind: "personal", connected: false, ...extra })
 a.wifiSeen = [net("Home", 70), net("Cafe", 40)]
 a.annotate()
 const shown = a.wifiNetworks

@@ -1246,10 +1246,10 @@ Scope {
     property string wifiConnectingSsid: ""
     property string wifiConnectSsid: ""
     property string wifiConnectPassword: ""
-    // The saved profile a connect or a disconnect goes through ("" = none: a new network).
-    property string wifiConnectProfile: ""
+    // The profile for the current Wi-Fi action (empty when joining a new network).
+    property string wifiProfileUuid: ""
     property string wifiConnectError: ""
-    // Networks NetworkManager already has a profile for: { ssid: profile name }. A saved network
+    // Saved profiles keyed by SSID and security kind. A saved network
     // connects without a password and can be forgotten (its profile deleted).
     property var wifiSaved: ({})
     // What the last scan saw, before the saved flag is put on it.
@@ -1266,11 +1266,10 @@ Scope {
     // they're safe to peel off the right with awk, whatever's left (however
     // many colons it has) is the SSID.
     readonly property string wifiListScript: [
-        "nmcli -t -e no -f SSID,SIGNAL,SECURITY,IN-USE device wifi list --rescan no 2>/dev/null | awk -F: '",
+        "LC_ALL=C nmcli -t -e no -f SSID,SIGNAL,SECURITY,IN-USE device wifi list --rescan no 2>/dev/null | awk -F: '",
         "  { n = NF; inuse = $n; sec = $(n - 1); sig = $(n - 2)",
         "    ssid = $1; for (i = 2; i <= n - 3; i++) ssid = ssid \":\" $i",
         "    if (ssid == \"\") next",
-        "    gsub(/\\|/, \"?\", ssid)",
         "    print sig \"|\" sec \"|\" inuse \"|\" ssid }'"
     ].join("\n")
 
@@ -1316,51 +1315,64 @@ Scope {
             fetchWifiList()
     }
 
+    readonly property bool wifiActionRunning: wifiConnectAction.running || wifiDisconnectAction.running || wifiForgetAction.running
+
     function connectWifi(ssid, password) {
+        if (wifiActionRunning)
+            return
         actionGen++
         wifiConnectError = ""
         wifiConnectingSsid = ssid
         wifiConnectSsid = ssid
         wifiConnectPassword = password
         // No password given and a profile exists: bring that profile up (it has the password).
-        wifiConnectProfile = password === "" && wifiSaved[ssid] !== undefined ? wifiSaved[ssid] : ""
+        wifiProfileUuid = password === "" ? (wifiNetworks.find(n => n.ssid === ssid)?.profileUuid || "") : ""
         wifiConnectAction.running = true
     }
 
     function disconnectWifi(ssid) {
+        if (wifiActionRunning)
+            return
+        const network = wifiNetworks.find(n => n.ssid === ssid && n.connected)
+        if (!network || !network.activeProfileUuid) {
+            wifiConnectError = "The active Wi-Fi profile is unavailable. Try again after the list refreshes."
+            fetchWifiSaved()
+            return
+        }
         actionGen++
         wifiConnectError = ""
-        wifiConnectSsid = ssid
-        // the profile is not always named after its SSID
-        wifiConnectProfile = wifiSaved[ssid] !== undefined ? wifiSaved[ssid] : ssid
+        wifiProfileUuid = network.activeProfileUuid
         wifiDisconnectAction.running = true
     }
 
-    // Delete the saved profile of a network (it also drops the connection if it is the active one).
-    function forgetWifi(ssid) {
-        if (wifiSaved[ssid] === undefined || wifiForgetAction.running)
+    function forgetWifi(uuid) {
+        if (wifiActionRunning || !uuid || !wifiNetworks.some(n => n.profileUuid === uuid))
             return
         actionGen++
         wifiConnectError = ""
-        wifiConnectSsid = ssid
-        wifiConnectProfile = wifiSaved[ssid]
+        wifiProfileUuid = uuid
         wifiForgetAction.running = true
     }
 
     // The saved flag goes on the scan's list; redone when either the scan or the saved list
     // changes, whichever arrives second.
     function annotateWifi() {
-        const next = wifiSeen.map(n => ({
-            ssid: n.ssid,
-            signal: n.signal,
-            secured: n.secured,
-            connected: n.connected,
-            saved: wifiSaved[n.ssid] !== undefined
-        }))
+        const next = wifiSeen.map(n => {
+            const profile = wifiSaved[JSON.stringify([n.ssid, n.securityKind])]
+            return {
+                ssid: n.ssid,
+                signal: n.signal,
+                secured: n.secured,
+                connected: n.connected,
+                saved: profile !== undefined,
+                profileUuid: profile ? profile.uuid : "",
+                activeProfileUuid: profile && profile.active ? profile.uuid : ""
+            }
+        })
         // The dialog shows the signal as 3 bars, so a few points of change is not a change: a
         // new list resets the dialog's list (scroll position, an opened row), and during a
         // scan the list is read every second.
-        const key = list => JSON.stringify(list.map(n => [n.ssid, n.signal >= 33, n.signal >= 66, n.secured, n.connected, n.saved]))
+        const key = list => JSON.stringify(list.map(n => [n.ssid, n.signal >= 33, n.signal >= 66, n.secured, n.connected, n.profileUuid, n.activeProfileUuid]))
         if (key(next) !== key(wifiNetworks))
             wifiNetworks = next
     }
@@ -1370,31 +1382,20 @@ Scope {
             wifiSavedAction.running = true
     }
 
-    // `saved|<profile name>|<ssid>` for every Wi-Fi profile. The SSID is read from the profile
-    // itself because the profile's name is only the SSID when it was made through nmcli or a
-    // GUI; a '|' is turned into '?' the way the scan list does so the two still match.
-    readonly property string wifiSavedScript: [
-        "nmcli -t -e no -f NAME,TYPE connection show 2>/dev/null | awk -F: '",
-        "  { n = NF; if ($n != \"802-11-wireless\") next",
-        "    name = $1; for (i = 2; i <= n - 1; i++) name = name \":\" $i",
-        "    print name }' | while IFS= read -r c; do",
-        "  case \"$c\" in *\"|\"*) continue ;; esac",
-        "  s=$(timeout 2 nmcli -g 802-11-wireless.ssid connection show id \"$c\" 2>/dev/null | head -n1)",
-        "  [ -n \"$s\" ] || s=\"$c\"",
-        "  s=$(printf '%s' \"$s\" | tr '|' '?')",
-        "  printf 'saved|%s|%s\\n' \"$c\" \"$s\"",
-        "done"
-    ].join("\n")
-
     function applyWifiSaved(text) {
+        let profiles
+        try {
+            profiles = JSON.parse(text)
+        } catch (e) {
+            return
+        }
+        if (!Array.isArray(profiles))
+            return
         const map = {}
-        for (const line of text.split("\n")) {
-            const parts = line.split("|")
-            if (parts.length < 3 || parts[0] !== "saved")
-                continue
-            const ssid = parts.slice(2).join("|")
-            if (ssid !== "" && map[ssid] === undefined)
-                map[ssid] = parts[1]
+        for (const profile of profiles) {
+            const key = JSON.stringify([profile.ssid, profile.securityKind])
+            if (map[key] === undefined || profile.active)
+                map[key] = profile
         }
         wifiSaved = map
         annotateWifi()
@@ -1417,6 +1418,8 @@ Scope {
                 ssid: ssid,
                 signal: isNaN(signal) ? 0 : signal,
                 secured: security !== "" && security !== "--",
+                securityKind: security === "" || security === "--" ? "open"
+                    : security.includes("802.1X") ? "enterprise" : "personal",
                 connected: parts[2] === "*"
             })
         }
@@ -1451,7 +1454,7 @@ Scope {
 
     Process {
         id: wifiSavedAction
-        command: ["sh", "-c", root.wifiSavedScript]
+        command: ["python3", Directories.script("system/wifi-saved-profiles.py")]
         stdout: StdioCollector {
             onStreamFinished: root.applyWifiSaved(text)
         }
@@ -1509,8 +1512,8 @@ Scope {
 
     Process {
         id: wifiConnectAction
-        command: root.wifiConnectProfile !== ""
-            ? ["nmcli", "connection", "up", "id", root.wifiConnectProfile]
+        command: root.wifiProfileUuid !== ""
+            ? ["nmcli", "connection", "up", "uuid", root.wifiProfileUuid]
             : (root.wifiConnectPassword !== ""
                 ? ["nmcli", "device", "wifi", "connect", root.wifiConnectSsid, "password", root.wifiConnectPassword]
                 : ["nmcli", "device", "wifi", "connect", root.wifiConnectSsid])
@@ -1522,7 +1525,7 @@ Scope {
         }
         onExited: {
             root.wifiConnectPassword = ""
-            root.wifiConnectProfile = ""
+            root.wifiProfileUuid = ""
             root.wifiConnectingSsid = ""
             root.refreshSoon()
             root.scanWifi(false)
@@ -1533,18 +1536,18 @@ Scope {
 
     Process {
         id: wifiDisconnectAction
-        // The saved profile's own name (it is the SSID unless the profile was renamed by hand).
-        command: ["nmcli", "connection", "down", "id", root.wifiConnectProfile !== "" ? root.wifiConnectProfile : root.wifiConnectSsid]
+        command: ["nmcli", "connection", "down", "uuid", root.wifiProfileUuid]
         onExited: {
-            root.wifiConnectProfile = ""
+            root.wifiProfileUuid = ""
             root.refreshSoon()
+            root.fetchWifiSaved()
             root.scanWifi(false)
         }
     }
 
     Process {
         id: wifiForgetAction
-        command: ["nmcli", "connection", "delete", "id", root.wifiConnectProfile]
+        command: ["nmcli", "connection", "delete", "uuid", root.wifiProfileUuid]
         stderr: StdioCollector {
             onStreamFinished: {
                 if (text.trim() !== "")
@@ -1552,7 +1555,7 @@ Scope {
             }
         }
         onExited: {
-            root.wifiConnectProfile = ""
+            root.wifiProfileUuid = ""
             root.refreshSoon()
             root.fetchWifiSaved()
             root.scanWifi(false)
