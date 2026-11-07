@@ -1233,7 +1233,7 @@ Scope {
 
     // ===== Wi-Fi network list / Bluetooth device list =====
 
-    property var wifiNetworks: []          // [{ssid, signal, secured, connected}]
+    property var wifiNetworks: []          // [{ssid, signal, secured, connected, profileUuid}]
     property bool wifiScanning: false
     // True only while a "Scan" button click's own fetch is in flight —
     // see wifiLiveRefresh below and NetworkDialog.qml's manualScanning
@@ -1244,27 +1244,10 @@ Scope {
     property string wifiConnectingSsid: ""
     property string wifiConnectSsid: ""
     property string wifiConnectPassword: ""
+    property string wifiConnectUuid: ""
     property string wifiConnectError: ""
 
-    // `--rescan no` reads NetworkManager's last-known scan (fast); the
-    // "Scan" button in the dialog instead asks for a fresh one first,
-    // which is what makes newly-appeared networks show up but costs a
-    // couple of real seconds. Same "-e no, SSID takes whatever's left"
-    // trick as the connected-SSID line above, extended to 3 fields
-    // instead of 1: signal/security/in-use never contain a colon, so
-    // they're safe to peel off the right with awk, whatever's left
-    // (however many colons it has) is the SSID.
-    readonly property string wifiListScript: [
-        "nmcli -t -e no -f SSID,SIGNAL,SECURITY,IN-USE device wifi list --rescan no 2>/dev/null | awk -F: '",
-        "  { n = NF; inuse = $n; sec = $(n - 1); sig = $(n - 2)",
-        "    ssid = $1; for (i = 2; i <= n - 3; i++) ssid = ssid \":\" $i",
-        "    if (ssid == \"\") next",
-        "    gsub(/\\|/, \"?\", ssid)",
-        "    print sig \"|\" sec \"|\" inuse \"|\" ssid }'"
-    ].join("\n")
-
-    readonly property string wifiRescanScript:
-        "timeout 5 nmcli device wifi rescan >/dev/null 2>&1\nsleep 2\n" + wifiListScript
+    readonly property string wifiNetworksScript: Directories.script("system/wifi-networks.py")
 
     function scanWifi(forceRescan, manual) {
         if (manual)
@@ -1277,6 +1260,10 @@ Scope {
     }
 
     function connectWifi(ssid, password) {
+        if (wifiConnectAction.running || wifiDisconnectAction.running)
+            return
+        const network = wifiNetworks.find(n => n.ssid === ssid)
+        wifiConnectUuid = password === "" && network ? (network.profileUuid || "") : ""
         actionGen++
         wifiConnectError = ""
         wifiConnectingSsid = ssid
@@ -1286,6 +1273,10 @@ Scope {
     }
 
     function disconnectWifi(ssid) {
+        if (wifiConnectAction.running || wifiDisconnectAction.running)
+            return
+        const network = wifiNetworks.find(n => n.ssid === ssid)
+        wifiConnectUuid = network ? (network.profileUuid || "") : ""
         actionGen++
         wifiConnectError = ""
         wifiConnectSsid = ssid
@@ -1293,41 +1284,20 @@ Scope {
     }
 
     function applyWifiList(text) {
-        const list = []
-        for (const line of text.split("\n")) {
-            if (line.trim() === "")
-                continue
-            const parts = line.split("|")
-            if (parts.length < 4)
-                continue
-            const signal = parseInt(parts[0], 10)
-            const security = parts[1]
-            const ssid = parts.slice(3).join("|")
-            if (ssid === "")
-                continue
-            list.push({
-                ssid: ssid,
-                signal: isNaN(signal) ? 0 : signal,
-                secured: security !== "" && security !== "--",
-                connected: parts[2] === "*"
-            })
+        try {
+            const list = JSON.parse(text)
+            if (Array.isArray(list))
+                wifiNetworks = list
+        } catch (e) {
+            // Keep the last successful list if a NetworkManager query failed.
         }
-        // Connected first, then strongest signal. nmcli lists every
-        // BSSID it can see separately — the same SSID from two APs —
-        // so only the first (strongest, since the list arrives sorted
-        // that way already) copy of each name is kept.
-        const seen = new Set()
-        wifiNetworks = list.filter(n => {
-            if (seen.has(n.ssid))
-                return false
-            seen.add(n.ssid)
-            return true
-        })
     }
 
     Process {
         id: wifiListAction
-        command: ["sh", "-c", root.wifiForceRescan ? root.wifiRescanScript : root.wifiListScript]
+        command: root.wifiForceRescan
+            ? ["python3", root.wifiNetworksScript, "--rescan"]
+            : ["python3", root.wifiNetworksScript]
         stdout: StdioCollector {
             onStreamFinished: root.applyWifiList(text)
         }
@@ -1353,7 +1323,9 @@ Scope {
 
     Process {
         id: wifiConnectAction
-        command: root.wifiConnectPassword !== ""
+        command: root.wifiConnectUuid !== ""
+            ? ["nmcli", "connection", "up", "uuid", root.wifiConnectUuid]
+            : root.wifiConnectPassword !== ""
             ? ["nmcli", "device", "wifi", "connect", root.wifiConnectSsid, "password", root.wifiConnectPassword]
             : ["nmcli", "device", "wifi", "connect", root.wifiConnectSsid]
         stderr: StdioCollector {
@@ -1372,10 +1344,9 @@ Scope {
 
     Process {
         id: wifiDisconnectAction
-        // Assumes the connection profile is named after its SSID, which
-        // is nmcli's own default for anything you connected through it
-        // or a GUI — a hand-renamed profile won't disconnect from here.
-        command: ["nmcli", "connection", "down", "id", root.wifiConnectSsid]
+        command: root.wifiConnectUuid !== ""
+            ? ["nmcli", "connection", "down", "uuid", root.wifiConnectUuid]
+            : ["nmcli", "connection", "down", "id", root.wifiConnectSsid]
         onExited: {
             root.refreshSoon()
             root.scanWifi(false)

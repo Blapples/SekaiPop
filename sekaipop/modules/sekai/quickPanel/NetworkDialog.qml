@@ -11,8 +11,8 @@ import qs.modules.sekai.phone
 // QuickSource.qml's nmcli poll) and turns its signals into nmcli calls.
 //
 // Tapping an open, unconnected network connects straight away. Tapping
-// a secured one expands a password field in place — Enter or the
-// "Connect" button sends it. Tapping the already-connected network
+// a saved one reuses its profile; a new secured one expands a password
+// field in place — Enter or the "Connect" button sends it. Tapping the already-connected network
 // disconnects it. The header's "Scan" button forces a fresh
 // `nmcli device wifi rescan`, which is slow enough (a couple of
 // seconds) that it's opt-in rather than run every time this opens.
@@ -23,7 +23,7 @@ Item {
     readonly property var mt: Theme.of(QsWindow.window)
 
     property bool open: false
-    property var networks: []          // [{ssid, signal, secured, connected}]
+    property var networks: []          // [{ssid, signal, secured, connected, profileUuid}]
     property bool scanning: false
     // True only while a scan the "Scan" button itself asked for is in
     // flight — separate from `scanning`, which also goes true for the
@@ -293,6 +293,7 @@ Item {
                     y: 34
                     text: row.busy ? "Connecting…"
                         : row.modelData.connected ? "Connected — tap to disconnect"
+                        : row.modelData.profileUuid ? "Saved — tap to connect"
                         : row.modelData.secured ? "Secured"
                         : "Open"
                     color: mt.pInkSub
@@ -319,6 +320,9 @@ Item {
                     onClicked: {
                         if (row.modelData.connected) {
                             root.disconnectRequested(row.modelData.ssid)
+                        } else if (row.modelData.profileUuid) {
+                            root.expandedSsid = ""
+                            root.connectRequested(row.modelData.ssid, "")
                         } else if (row.modelData.secured) {
                             root.expandedSsid = row.expanded ? "" : row.modelData.ssid
                         } else {
