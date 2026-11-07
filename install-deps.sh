@@ -143,7 +143,7 @@ FEATURES=(
   scrcpy android-tools
   yt-dlp
   gallery-dl
-  python-requests python-curl-cffi
+  python-requests "python-curl_cffi|python-curl-cffi-git|python-curl-cffi"
   imagemagick tesseract tesseract-data-eng swappy wf-recorder ffmpeg
   brightnessctl ddcutil zenity kitty
   plasma-nm kde-cli-tools blueman
