@@ -1861,6 +1861,30 @@ Scope {
         }
     }
 
+    // A window is fullscreen on the monitor in focus (Hyprland's `hasfullscreen`). Quickshell
+    // refreshes a workspace's data on workspace events but not when a window goes fullscreen,
+    // so this asks again on those events (the same thing NotificationSource does, which only
+    // does it while its own setting is on).
+    readonly property var fullscreenWorkspace: Hyprland.focusedMonitor ? Hyprland.focusedMonitor.activeWorkspace : null
+    readonly property bool fullscreenUp: !!(fullscreenWorkspace && fullscreenWorkspace.lastIpcObject
+                                            && fullscreenWorkspace.lastIpcObject.hasfullscreen)
+    Connections {
+        target: Hyprland
+
+        function onRawEvent(event) {
+            if (event.name === "fullscreen" || event.name === "workspace" || event.name === "workspacev2"
+                    || event.name === "focusedmon" || event.name === "focusedmonv2"
+                    || event.name === "openwindow" || event.name === "closewindow"
+                    || event.name === "movewindow" || event.name === "movewindowv2")
+                fullscreenRefresh.restart()
+        }
+    }
+    Timer {
+        id: fullscreenRefresh
+        interval: 150
+        onTriggered: Hyprland.refreshWorkspaces()
+    }
+
     // ===== the panel =====
     PanelWindow {
         id: win
@@ -1878,9 +1902,24 @@ Scope {
         // It is not mapped at startup, only from the first open: a window mapped before the
         // phone has ever been laid out leaves the banner and avatar layers (the masked
         // pictures) blank for good.
-        property bool everShown: false
-        onShownChanged: if (shown) everShown = true
-        visible: shown || everShown
+        // Nor while a fullscreen window is up: a window that stays mapped over (or, for some
+        // apps, behind) a fullscreen window keeps getting in the way, so it goes away when the
+        // phone closes then, as it always did, and comes back with the next open.
+        property bool keepAlive: false
+        onShownChanged: {
+            if (shown)
+                keepAlive = true
+            else if (root.fullscreenUp)
+                keepAlive = false
+        }
+        Connections {
+            target: root
+            function onFullscreenUpChanged() {
+                if (root.fullscreenUp && !win.shown)
+                    win.keepAlive = false
+            }
+        }
+        visible: shown || keepAlive
         color: "transparent"
 
         // Sits on the bottom edge, centered (no left / right anchor), and
@@ -1898,8 +1937,10 @@ Scope {
         // must be above it.
         // Also while Edit Desktop is on: its shelf and guides windows are on Overlay, and
         // the phone is opened after them, so on the same layer it is drawn over them.
+        // Also while a window is fullscreen: some apps (a photo viewer, say) are drawn over the
+        // Top layer, which put the phone behind them, out of sight but still taking the mouse.
         WlrLayershell.layer: (BarPositionService.position === "bottom" || root.settingsShown
-                              || root.useCatcher || root.coverCheat
+                              || root.useCatcher || root.coverCheat || root.fullscreenUp
                               || EditMode.active) ? WlrLayer.Overlay
                                                   : WlrLayer.Top
         anchors {
