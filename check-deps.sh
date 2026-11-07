@@ -337,8 +337,8 @@ if [ -x "$RD_VENV" ]; then RD_PY="$RD_VENV"; RD_WHICH="reader venv"; else RD_PY=
 if have "$RD_PY" || [ -x "$RD_PY" ]; then
     "$RD_PY" -c 'import requests' 2>/dev/null && record 2 "python module requests ($RD_WHICH)" 1 python-requests pac \
         || record 2 "python module requests ($RD_WHICH)" 0 python-requests pac "the manga and novel backends need it"
-    "$RD_PY" -c 'import curl_cffi' 2>/dev/null && record 2 "python module curl_cffi ($RD_WHICH)" 1 python-curl-cffi pac \
-        || record 2 "python module curl_cffi ($RD_WHICH)" 0 python-curl-cffi pac "WeebCentral needs it to get past Cloudflare"
+    "$RD_PY" -c 'import curl_cffi' 2>/dev/null && record 2 "python module curl_cffi ($RD_WHICH)" 1 python-curl_cffi pac \
+        || record 2 "python module curl_cffi ($RD_WHICH)" 0 python-curl_cffi pac "WeebCentral needs it to get past Cloudflare"
 fi
 # Suwayomi: the full Java 21+ runtime (jre-openjdk), the jar, and the launcher install-deps.sh writes (the manga reader starts Suwayomi through it)
 SW_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/suwayomi"
