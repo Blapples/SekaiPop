@@ -159,7 +159,7 @@ Item {
     signal wifiAdvancedRequested()
     signal wifiConnectRequested(string ssid, string password)
     signal wifiDisconnectRequested(string ssid)
-    signal wifiForgetRequested(string ssid)
+    signal wifiForgetRequested(string uuid)
     signal bluetoothScanRequested()
     signal bluetoothAdvancedRequested()
     signal bluetoothConnectRequested(string address)
@@ -2462,7 +2462,7 @@ Item {
         onAdvancedRequested: face.wifiAdvancedRequested()
         onConnectRequested: (ssid, password) => face.wifiConnectRequested(ssid, password)
         onDisconnectRequested: ssid => face.wifiDisconnectRequested(ssid)
-        onForgetRequested: ssid => face.wifiForgetRequested(ssid)
+        onForgetRequested: uuid => face.wifiForgetRequested(uuid)
     }
 
     BluetoothDialog {

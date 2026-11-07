@@ -46,7 +46,7 @@ Item {
     signal advancedRequested()
     signal connectRequested(string ssid, string password)
     signal disconnectRequested(string ssid)
-    signal forgetRequested(string ssid)
+    signal forgetRequested(string uuid)
 
     anchors.fill: parent
     // Only worth hit-testing (and only shows up in the phone's texture
@@ -64,16 +64,16 @@ Item {
     // close, and if a rescan drops that network from the list.
     property string expandedSsid: ""
     // Which row (if any) is showing its Forget button. Same clearing rules.
-    property string forgetSsid: ""
+    property string forgetProfileUuid: ""
     onOpenChanged: if (!open) {
         expandedSsid = ""
-        forgetSsid = ""
+        forgetProfileUuid = ""
     }
     onNetworksChanged: {
         if (expandedSsid !== "" && !networks.some(n => n.ssid === expandedSsid))
             expandedSsid = ""
-        if (forgetSsid !== "" && !networks.some(n => n.ssid === forgetSsid))
-            forgetSsid = ""
+        if (forgetProfileUuid !== "" && !networks.some(n => n.profileUuid === forgetProfileUuid))
+            forgetProfileUuid = ""
     }
 
     // Same dimming glass PowerMenuScrim uses (inset to the visible
@@ -243,7 +243,7 @@ Item {
                 // needs a password typed; anything else may.
                 readonly property bool hasActions: modelData.saved === true || modelData.connected
                 // Only a saved network has a profile to forget.
-                readonly property bool forgetOpen: modelData.saved === true && root.forgetSsid === modelData.ssid
+                readonly property bool forgetOpen: modelData.saved === true && root.forgetProfileUuid === modelData.profileUuid
 
                 // 0 -> 1 as the Forget button comes in. One value drives the button's slide, fade
                 // and scale and the row text making room for it, so they always move together.
@@ -352,10 +352,10 @@ Item {
                         if (mouse.button === Qt.RightButton) {
                             // only a saved network has something to forget
                             if (row.modelData.saved === true)
-                                root.forgetSsid = row.forgetOpen ? "" : row.modelData.ssid
+                                root.forgetProfileUuid = row.forgetOpen ? "" : row.modelData.profileUuid
                             return
                         }
-                        root.forgetSsid = ""
+                        root.forgetProfileUuid = ""
                         if (row.modelData.connected) {
                             root.disconnectRequested(row.modelData.ssid)
                         } else if (row.modelData.saved === true || !row.modelData.secured) {
@@ -408,8 +408,8 @@ Item {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            root.forgetSsid = ""
-                            root.forgetRequested(row.modelData.ssid)
+                            root.forgetProfileUuid = ""
+                            root.forgetRequested(row.modelData.profileUuid)
                         }
                     }
                 }
