@@ -119,9 +119,30 @@ onWallpaperEnabledChanged: {
     readonly property string pauseMode: SettingsService.get("wallpaper.videoPause")
     // Desktop Focus Mode's "Reduce expensive effects": a window on this monitor pauses the video too.
     readonly property bool focusReduced: FocusService.effectsReducedOn(win.screenName)
-    readonly property bool videoCovered: win.focusReduced || (win.pauseMode === "windows" ? (win.hasWindows || win.fullscreenCovered)
+    readonly property bool videoCoveredNow: win.focusReduced || (win.pauseMode === "windows" ? (win.hasWindows || win.fullscreenCovered)
         : win.pauseMode === "never" ? false
         : win.fullscreenCovered)
+    // When the desktop comes back (the last window leaves this monitor) the desktop widgets pop in one
+    // after another (FocusMath.STAGGER_MS apart, then their own pop-in). Resuming or restarting the video
+    // in the same moment makes the two fight for the GPU and the pop-in stutters, so the video stays on
+    // its paused frame a little longer and carries on once the widgets have settled.
+    property bool wakeHold: false
+    readonly property bool videoCovered: win.videoCoveredNow || win.wakeHold
+    onVideoCoveredNowChanged: {
+        if (win.videoCoveredNow) {
+            wakeHoldTimer.stop()
+            win.wakeHold = false
+        } else if (videoLayer.active) {
+            win.wakeHold = true
+            wakeHoldTimer.restart()
+        }
+    }
+    Timer {
+        id: wakeHoldTimer
+        // The last widget starts 770 ms after the first (FocusMath.SLOTS) and pops in for about 460 ms.
+        interval: 1300
+        onTriggered: win.wakeHold = false
+    }
 
     // mpvpaper plays the video on its own surface (see MpvpaperWallpaper.qml); if it can't start
     // the built-in QtMultimedia player is used for the rest of this session.

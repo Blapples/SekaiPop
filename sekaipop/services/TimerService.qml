@@ -88,10 +88,32 @@ Singleton {
         return root.short(s, root.shownMode === "stopwatch")
     }
 
+    // ---- what the bar's timer pill shows ("00:00" style, so it can keep a fixed width) ----
+    // The running clock as "24:13" (or "1:23:45" from an hour up); "" when nothing runs.
     readonly property string shownClock: {
+        if (root.shownMode === "")
+            return ""
         const s = root.shownMode === "pomodoro" ? root.pomLeft
             : (root.shownMode === "timer" ? root.timerLeft : root.swElapsed)
         return root.clock(s, root.shownMode === "stopwatch")
+    }
+    // The widest that clock can get while it runs, for the pill to keep that width: a stopwatch can
+    // pass the hour at any time; a timer or a phase that is an hour or more already shows hours.
+    readonly property string shownTemplate: {
+        const span = root.shownMode === "pomodoro" ? root.phaseSeconds(root.pomPhase)
+            : (root.shownMode === "timer" ? root.timerTotal : 0)
+        return (root.shownMode === "stopwatch" || span >= 3600) ? "0:00:00" : "00:00"
+    }
+    // The hover tag.
+    readonly property string shownTip: {
+        if (root.shownMode === "pomodoro")
+            return "Pomodoro · " + root.phaseLabel + " " + root.pomRound + "/" + root.pomRounds
+                + " · " + root.shownClock + " left"
+        if (root.shownMode === "timer")
+            return "Timer · " + root.shownClock + " left"
+        if (root.shownMode === "stopwatch")
+            return "Stopwatch · " + root.shownClock
+        return "Timer, stopwatch, pomodoro"
     }
 
     function short(seconds, up) {

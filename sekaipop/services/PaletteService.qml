@@ -55,12 +55,14 @@ Singleton {
     // must not put a new card over your desktop by itself.
     property bool shown: false       // ipc: palettecard toggle / show / hide
 
-    // The card's size. "full" is the card as it has always been; "2x2" is the footprint the
+    // The card's size: "full", "2x2" or "1x1". "full" is the card as it has always been; "2x2" is the footprint the
     // clock, user card and weather card share (320 x 276), so the cards line up as a set.
     // Remembered across restarts. Switch it in Settings -> Desktop, with the size key that
-    // shows on the card while it is selected in Edit Desktop, or `ipc call palettecard size 2x2|full`.
+    // shows on the card while it is selected in Edit Desktop, or `ipc call palettecard size 1x1|2x2|full`.
     property string size: "full"
     readonly property bool small: root.size === "2x2"
+    // "1x1" is a quarter of the 2x2 (160 x 138 with the housing): a tile, not a card.
+    readonly property bool tiny: root.size === "1x1"
     property real posX: -1           // -1 = never placed; the widget picks a default
     property real posY: -1
     // The shell scale posX / posY were saved at, in design pixels (same idea as
@@ -181,17 +183,19 @@ Singleton {
         root.persist()
     }
 
-    // "2x2" (or "small") and "full"; anything else is "full".
+    // "1x1" (or "tiny"), "2x2" (or "small") and "full"; anything else is "full".
     function setSize(value) {
-        const v = (value === "2x2" || value === "small") ? "2x2" : "full"
+        const v = (value === "1x1" || value === "tiny") ? "1x1"
+            : (value === "2x2" || value === "small") ? "2x2" : "full"
         if (v === root.size)
             return
         root.size = v
         root.persist()
     }
 
+    // One press goes full -> 2x2 -> 1x1 -> full.
     function toggleSize() {
-        root.setSize(root.small ? "full" : "2x2")
+        root.setSize(root.tiny ? "full" : (root.small ? "1x1" : "2x2"))
     }
 
     // ===== wearing (the only two places the theme changes) =====
@@ -258,7 +262,7 @@ Singleton {
             if (typeof s.screen === "string")
                 root.screenName = s.screen
             root.shown = s.shown === true
-            root.size = s.size === "2x2" ? "2x2" : "full"
+            root.size = (s.size === "2x2" || s.size === "1x1") ? s.size : "full"
         } catch (e) {
             // No file yet (first run) or an unreadable one: keep the defaults.
         }

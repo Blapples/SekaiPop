@@ -127,6 +127,25 @@ Singleton {
         return true
     }
 
+    // A preset puts back the colours it was saved with (DesktopPresetService.wear): the
+    // five colours only; the caller then wears the "custom" theme. False if not five colours.
+    function setCustomColors(colors) {
+        const c = PM.parse(colors)
+        if (!c)
+            return false
+        if (!PM.sameColors(root.customColors, c)) {
+            root.customColors = c
+            customSaver.save(c.join(","))
+        }
+        return true
+    }
+
+    // The shell palette of five saved colours (what a preset's tile is painted with), or null.
+    function customShell(colors) {
+        const c = PM.parse(colors)
+        return c ? PM.toShell(c) : null
+    }
+
     Process {
         id: customSaver
 

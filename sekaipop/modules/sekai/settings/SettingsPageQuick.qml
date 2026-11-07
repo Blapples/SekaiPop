@@ -233,4 +233,121 @@ SettingsPage {
             onToggled: EditMode.toggleWidgetsLocked()
         }
     }
+
+    SectionCard {
+        title: "Phone mirror"
+
+        SettingToggle {
+            icon: "smartphone"
+            label: "Show my phone"
+            detail: "Your Android phone, live, on a phone at the side of the screen (scrcpy)"
+            checked: PhoneMirrorService.shown
+            onToggled: PhoneMirrorService.toggle()
+        }
+
+        SettingToggle {
+            icon: "play_arrow"
+            label: "Start when opened"
+            detail: "Off: the phone comes up with a Start key and nothing runs until you press it"
+            checked: SettingsService.flag("phoneMirror.autoStart")
+            onToggled: SettingsService.toggle("phoneMirror.autoStart")
+        }
+
+        SettingChoice {
+            label: "Side"
+            sublabel: "Where it comes up"
+            current: SettingsService.get("phoneMirror.edge")
+            options: [
+                { id: "left", label: "Left", icon: "align_horizontal_left" },
+                { id: "right", label: "Right", icon: "align_horizontal_right" }
+            ]
+            onPicked: id => SettingsService.set("phoneMirror.edge", id)
+        }
+
+        SettingStepper {
+            icon: "height"
+            label: "Height"
+            from: 50
+            to: 100
+            step: 2
+            suffix: " %"
+            value: SettingsService.get("phoneMirror.height")
+            onMoved: v => SettingsService.set("phoneMirror.height", Math.round(v))
+        }
+
+        SettingToggle {
+            icon: "smartphone"
+            label: "Notch"
+            detail: "The Quick Panel phone's notch over the top of the picture"
+            checked: SettingsService.flag("phoneMirror.notch")
+            onToggled: SettingsService.toggle("phoneMirror.notch")
+        }
+
+        SettingText {
+            label: "Phone on Wi-Fi"
+            sublabel: "host:port from Wireless debugging; empty = cable"
+            value: SettingsService.get("phoneMirror.address")
+            placeholder: "192.168.1.20:5555"
+            onSubmitted: text => {
+                if (text.trim() === "")
+                    PhoneMirrorService.forgetAddress()
+                else
+                    PhoneMirrorService.connectAddress(text)
+            }
+        }
+
+        SettingToggle {
+            icon: "volume_up"
+            label: "Phone sound"
+            detail: "Play the phone's sound on this computer (Android 11 or newer)"
+            checked: SettingsService.flag("phoneMirror.audio")
+            onToggled: SettingsService.toggle("phoneMirror.audio")
+        }
+
+        SettingToggle {
+            icon: "lock_open"
+            label: "Unlock the phone for me"
+            detail: "Wake it and swipe the lock screen up; a PIN is typed in a small window"
+            checked: SettingsService.flag("phoneMirror.autoUnlock")
+            onToggled: SettingsService.toggle("phoneMirror.autoUnlock")
+        }
+
+        SettingToggle {
+            icon: "coffee"
+            label: "Keep the phone awake"
+            detail: "While it is shown here"
+            checked: SettingsService.flag("phoneMirror.stayAwake")
+            onToggled: SettingsService.toggle("phoneMirror.stayAwake")
+        }
+
+        SettingToggle {
+            icon: "phonelink_off"
+            label: "Turn the phone's screen off"
+            detail: "Saves its battery. Touch can feel slower on some phones"
+            checked: SettingsService.flag("phoneMirror.turnScreenOff")
+            onToggled: SettingsService.toggle("phoneMirror.turnScreenOff")
+        }
+
+        SettingChoice {
+            label: "Keyboard"
+            sublabel: "How your typing reaches the phone"
+            current: SettingsService.get("phoneMirror.keyboard")
+            options: [
+                { id: "uhid", label: "Real keyboard", icon: "keyboard" },
+                { id: "sdk", label: "Typed text", icon: "text_fields" }
+            ]
+            onPicked: id => SettingsService.set("phoneMirror.keyboard", id)
+        }
+
+        SettingStepper {
+            icon: "timer"
+            label: "Keep it ready"
+            from: 0
+            to: 600
+            step: 30
+            suffix: " s"
+            value: SettingsService.get("phoneMirror.keepWarm")
+            onMoved: v => SettingsService.set("phoneMirror.keepWarm", Math.round(v))
+        }
+    }
 }

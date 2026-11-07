@@ -4,6 +4,13 @@
 #
 #   displays.sh apply <spec>...     change the screens now (nothing is saved)
 #   displays.sh save  <spec>...     write ~/.config/hypr/monitors.lua
+#   displays.sh force <spec>...     like apply, but with `hyprctl keyword monitor` (the
+#                                   card uses it when apply did not take)
+#   displays.sh known               the screens that are plugged in, name|WxH, whether or
+#                                   not Hyprland lists them (a screen that was switched
+#                                   off in monitors.lua can be missing from hyprctl)
+#
+# What hyprctl answers to a change that did not work is kept in ~/.cache/sekaipop/displays.log.
 #
 # <spec> is  name|on|mode|x|y|scale   (mode like 1920x1080@144.00, or "preferred")
 #         or name|off            (or name|off|x|y: where to park it, see below)
@@ -36,6 +43,17 @@ is_num() {
 valid_name() {
     case "$1" in ''|*[!A-Za-z0-9_.:-]*) return 1 ;; esac
     return 0
+}
+
+log="${XDG_CACHE_HOME:-$HOME/.cache}/sekaipop/displays.log"
+
+# Run hyprctl; anything but "ok" goes to the log, so a change that did not take can be looked at.
+hypr() {
+    out=$(hyprctl "$@" 2>&1)
+    [ "$out" = ok ] && return 0
+    mkdir -p "${log%/*}" 2>/dev/null
+    printf '%s hyprctl %s -> %s\n' "$(date '+%F %T')" "$*" "${out:-(nothing)}" >> "$log" 2>/dev/null
+    return 1
 }
 
 # Lines inside an existing block for <name> that are not ours, one per line, with no
@@ -75,20 +93,54 @@ EOF2
                 [ "$state" = "$pass" ] || continue
                 if [ "$state" = on ]; then
                     valid_on "$name" "$mode" "$x" "$y" "$scale" || { echo "bad spec: $spec" >&2; exit 2; }
-                    hyprctl eval "hl.monitor({ output = \"$name\", mode = \"$mode\", position = \"${x}x${y}\", scale = $scale })" >/dev/null 2>&1
+                    hypr eval "hl.monitor({ output = \"$name\", mode = \"$mode\", position = \"${x}x${y}\", scale = $scale })"
                 else
                     valid_name "$name" || { echo "bad spec: $spec" >&2; exit 2; }
-                    hyprctl eval "hl.monitor({ output = \"$name\", disabled = true })" >/dev/null 2>&1
+                    hypr eval "hl.monitor({ output = \"$name\", disabled = true })"
                     # Best effort: park it beside the others. An off screen is otherwise
                     # counted at 0, 0 and Hyprland warns that it overlaps. If Hyprland does
                     # not take a position on an off screen this changes nothing (it is
                     # already off), and nothing is saved from here.
                     px="$mode"; py="$x"
                     if is_num "$px" && is_num "$py"; then
-                        hyprctl eval "hl.monitor({ output = \"$name\", disabled = true, position = \"${px}x${py}\" })" >/dev/null 2>&1
+                        hypr eval "hl.monitor({ output = \"$name\", disabled = true, position = \"${px}x${py}\" })"
                     fi
                 fi
             done
+        done
+        ;;
+    force)
+        shift
+        command -v hyprctl >/dev/null 2>&1 || exit 1
+        for pass in on off; do
+            for spec in "$@"; do
+                IFS='|' read -r name state mode x y scale <<EOF2
+$spec
+EOF2
+                [ "$state" = "$pass" ] || continue
+                if [ "$state" = on ]; then
+                    valid_on "$name" "$mode" "$x" "$y" "$scale" || { echo "bad spec: $spec" >&2; exit 2; }
+                    hypr keyword monitor "$name,$mode,${x}x${y},$scale"
+                else
+                    valid_name "$name" || { echo "bad spec: $spec" >&2; exit 2; }
+                    hypr keyword monitor "$name,disable"
+                fi
+            done
+        done
+        ;;
+    known)
+        # The kernel's list of plugged-in screens: /sys/class/drm/card1-HDMI-A-1/status says
+        # "connected", and modes lists its sizes, the preferred one first.
+        for st in /sys/class/drm/card*-*/status; do
+            [ -f "$st" ] || continue
+            [ "$(cat "$st" 2>/dev/null)" = connected ] || continue
+            d=${st%/status}
+            n=${d##*/}
+            n=${n#card*-}
+            valid_name "$n" || continue
+            sz=$(head -n 1 "$d/modes" 2>/dev/null)
+            case "$sz" in ''|*[!0-9x]*) sz="" ;; esac
+            echo "$n|$sz"
         done
         ;;
     save)
@@ -134,7 +186,7 @@ EOF2
         mv -f "$tmp" "$file" || { rm -f "$tmp"; exit 1; }
         ;;
     *)
-        echo "usage: $0 apply <spec>... | save <spec>..." >&2
+        echo "usage: $0 apply <spec>... | force <spec>... | save <spec>... | known" >&2
         exit 2
         ;;
 esac

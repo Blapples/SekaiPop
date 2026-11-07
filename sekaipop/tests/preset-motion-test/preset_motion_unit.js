@@ -21,8 +21,12 @@ const PP = require("../lib/presetparts")
 const PresetWidgets = { list: require("../lib/registry").load({}) }
 // The service walks `all` (the list plus the desktop widget plugins); no plugins here.
 PresetWidgets.all = PresetWidgets.list
+// The bar pills the preset knows (wornSettings): this desktop has no newer ones.
+const BarLayoutService = { builtinModules: [{ id: "clock" }], legacyModules: ["clock"] }
+const SettingsService = { defaults: { "bar.clock": true } }
 const root = { keeps: k => k === "dock.filesCommand", capture: () => live }
 root.stable = eval("(" + grab("stable") + ")")
+root.wornSettings = eval("(" + grab("wornSettings") + ")")
 root.motionPlan = eval("(" + grab("motionPlan") + ")")
 const base = () => ({
     settings: { "bar.clock": true, "dock.iconSize": 40, "dock.position": "bottom", "dock.filesCommand": "a", "ui.x": 1 },

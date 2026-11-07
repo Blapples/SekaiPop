@@ -400,6 +400,11 @@ Item {
         readonly property bool selected: DesktopPresetService.isCurrent(tile.d)
         readonly property var themeInfo: tile.d.theme ?? ({})
         readonly property var palette: {
+            if (tile.themeInfo.group === "custom") {
+                const own = ThemeService.customShell(tile.themeInfo.custom)
+                if (own)
+                    return own
+            }
             const g = ThemeService.groups.find(x => x.id === tile.themeInfo.group)
             return g ? g.c : ThemeService.baseGroups[0].c
         }

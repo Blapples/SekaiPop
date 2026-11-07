@@ -791,8 +791,11 @@ PanelWindow {
                 // The same footprint as the clock's KEYS card: its content is
                 // 286 x 238, and the housing adds the inset on every side plus
                 // the hard shadow underneath.
-                readonly property int contentW: 286
-                readonly property int contentH: 238
+                // The 1 x 1 size (UserCardService.size) is a quarter of it: 120 x 94 of content,
+                // 154 x 132 with the housing.
+                readonly property bool tiny: UserCardService.tiny
+                readonly property int contentW: card.tiny ? 120 : 286
+                readonly property int contentH: card.tiny ? 94 : 238
                 readonly property int inset: mt.borderWidth + mt.outerRingWidth + 10
 
                 width: card.contentW + card.inset * 2
@@ -813,8 +816,12 @@ PanelWindow {
                 // Is this point (in card pixels) on the avatar? Works through the
                 // avatar's tilt and scale.
                 function isOverAvatar(px, py) {
-                    const p = avatarSlot.mapFromItem(dragArea, px, py)
-                    return p.x >= 0 && p.y >= 0 && p.x <= avatarSlot.width && p.y <= avatarSlot.height
+                    // The 1 x 1 face has its own avatar (null until it is built).
+                    const slot = card.tiny ? (tinyLoader.item ? tinyLoader.item.avatar : null) : avatarSlot
+                    if (!slot)
+                        return false
+                    const p = slot.mapFromItem(dragArea, px, py)
+                    return p.x >= 0 && p.y >= 0 && p.x <= slot.width && p.y <= slot.height
                 }
 
                 readonly property bool avatarHover: dragArea.containsMouse && card.isOverAvatar(dragArea.mouseX, dragArea.mouseY)
@@ -823,6 +830,11 @@ PanelWindow {
                 // The click: the avatar squashes and springs back, and eight
                 // diamonds fly out of it.
                 function popBurst() {
+                    if (card.tiny) {
+                        if (tinyLoader.item)
+                            tinyLoader.item.pop()
+                        return
+                    }
                     hitAnim.restart()
                     burstAnim.restart()
                 }
@@ -842,7 +854,9 @@ PanelWindow {
 
                 // The housing: the same navy outline / pale ring / surface fill /
                 // hard shadow as the bar, the dock, the To-Do card and the clock.
+                // Not drawn at 1 x 1: that size is one bare object on the wallpaper (TinyFoot.qml).
                 Pill {
+                    visible: !card.tiny
                     anchors.fill: parent
                     cornerRadius: mt.radiusOuter
                     ringWidth: mt.borderWidth + mt.outerRingWidth
@@ -908,10 +922,170 @@ PanelWindow {
                     }
                 }
 
+                // Edit Desktop: flip between 2 x 2 and 1 x 1 (only while the card is selected).
+                SizeKey {
+                    shown: chrome.selected
+                    small: card.tiny
+                    label: "SIZE  " + (card.tiny ? "1 x 1" : "2 x 2")
+                    onToggled: UserCardService.toggleSize()
+                }
+
+                // ===== the 1 x 1 face =====
+                // ONLY your avatar, as a button: no plate, no name, no backdrop. The picture
+                // itself is the key (the same navy outline and hard shadow as every other
+                // button in the shell): it sinks into its shadow while pressed, tips the other
+                // way when pointed at, and a click squashes it and throws the burst. Built
+                // only while the card is 1 x 1.
+                Loader {
+                    id: tinyLoader
+                    z: 2
+                    x: card.inset
+                    y: card.inset
+                    active: card.tiny
+                    sourceComponent: tinyFace
+                }
+
+                Component {
+                    id: tinyFace
+
+                    Item {
+                        id: tface
+                        width: card.contentW
+                        height: card.contentH
+
+                        // The avatar is the whole key: the card's hit test (isOverAvatar) and
+                        // the click (the burst) use it.
+                        readonly property Item avatar: tAvatar
+
+                        function pop() {
+                            tHit.restart()
+                            tBurst.restart()
+                        }
+
+                        TinyFoot {
+                            id: tFoot
+                            anchors.fill: parent
+
+                            // The key: as tall as the card's footprint allows, in its middle.
+                            readonly property real keySize: tFoot.capH - 4
+
+                            SequentialAnimation {
+                                id: tHit
+                                NumberAnimation { target: tAvatar; property: "hit"; to: 0.9; duration: 70; easing.type: Easing.OutQuad }
+                                NumberAnimation { target: tAvatar; property: "hit"; to: 1; duration: 380; easing.type: Easing.OutBack; easing.overshoot: 3.2 }
+                            }
+
+                            Item {
+                                id: tAvatar
+                                x: (tFoot.capW - tFoot.keySize) / 2
+                                y: 2
+                                width: tFoot.keySize + 3                  // + the shadow's 3
+                                height: tFoot.keySize + 4                 // + the shadow's 4
+                                transformOrigin: Item.Center
+                                rotation: card.avatarHover ? 3 : -3
+
+                                property real hit: 1
+                                scale: tAvatar.hit
+
+                                Behavior on rotation {
+                                    NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 2.2 }
+                                }
+
+                                Pill {
+                                    id: tPill
+                                    anchors.fill: parent
+                                    cornerRadius: 38
+                                    ringWidth: mt.borderWidth   // no white ring: the picture meets the outline
+                                    shadowDx: 3
+                                    shadowDy: 4
+                                    pressed: card.avatarDown
+                                    fillColor: mt.chipFill
+
+                                    // No picture picked yet: your initial.
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: !tPhoto.ready
+                                        text: win.userName.charAt(0).toUpperCase()
+                                        color: card.glow
+                                        font.family: mt.fontFamily
+                                        font.pixelSize: 64
+                                        font.weight: Font.ExtraBold
+                                        font.styleName: mt.fontStyleBold
+                                    }
+
+                                    // The Quick Panel's avatar picture.
+                                    MaskedPhoto {
+                                        id: tPhoto
+                                        anchors.fill: parent
+                                        source: PanelImages.avatar
+                                        framing: PanelImages.framingFor("avatar")
+                                        radius: Math.max(0, tPill.cornerRadius - tPill.ringWidth)
+                                        frameWidth: tPill.borderWidth
+                                        frameRadius: tPill.cornerRadius
+                                        frameColor: tPill.classicScope ? mt.pLine : mt.line
+                                    }
+                                }
+                            }
+
+                            // The burst: the same eight diamonds as the big card's, from the
+                            // middle of the avatar, flying out past its edge. One number, `t`,
+                            // 0 -> 1.
+                            Item {
+                                id: tBurst
+                                z: 6
+                                x: tFoot.capW / 2
+                                y: tAvatar.y + tFoot.keySize / 2
+                                visible: tBurst.t < 1
+
+                                property real t: 1
+
+                                function restart() {
+                                    tBurstAnim.restart()
+                                }
+
+                                NumberAnimation {
+                                    id: tBurstAnim
+                                    target: tBurst
+                                    property: "t"
+                                    from: 0
+                                    to: 1
+                                    duration: 560
+                                    easing.type: Easing.OutCubic
+                                }
+
+                                Repeater {
+                                    model: 8
+
+                                    Rectangle {
+                                        required property int index
+
+                                        readonly property real ang: (index * 45 + 22.5) * Math.PI / 180
+                                        readonly property real dist: tFoot.keySize / 2 + 4 + tBurst.t * (index % 2 === 0 ? 16 : 11)
+
+                                        width: index % 2 === 0 ? 10 : 8
+                                        height: width
+                                        radius: 3
+                                        rotation: 45
+                                        x: Math.cos(ang) * dist - width / 2
+                                        y: Math.sin(ang) * dist - height / 2
+                                        scale: 1.15 - tBurst.t * 0.85
+                                        opacity: 1 - tBurst.t * tBurst.t
+                                        color: index % 3 === 0 ? mt.accentMint : (index % 3 === 1 ? mt.accentCyan : "#ffffff")
+                                        border.width: 2
+                                        border.color: mt.colBorder
+                                        antialiasing: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // ===== the content =====
                 Item {
                     id: content
                     z: 2
+                    visible: !card.tiny
                     x: card.inset
                     y: card.inset
                     width: card.contentW

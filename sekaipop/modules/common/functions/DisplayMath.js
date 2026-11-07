@@ -353,3 +353,39 @@ function view(rects, areaW, areaH) {
              ox: (areaW - (x1 - x0) * scale) / 2 - x0 * scale,
              oy: (areaH - (y1 - y0) * scale) / 2 - y0 * scale };
 }
+
+// ===== screens Hyprland does not list =====
+// A screen switched off in monitors.lua can be missing from `hyprctl monitors all` after
+// a restart, and then the card has nothing to switch back on. displays.sh `known` lists
+// the screens the kernel says are plugged in ("name|WxH", the size may be empty).
+function parseKnown(text) {
+    var out = [];
+    String(text || "").split("\n").forEach(function (line) {
+        var parts = line.trim().split("|");
+        if (!/^[A-Za-z0-9_.:-]+$/.test(parts[0] || ""))
+            return;
+        var m = /^(\d+)x(\d+)$/.exec(parts[1] || "");
+        out.push({ name: parts[0], w: m ? parseInt(m[1], 10) : 0, h: m ? parseInt(m[2], 10) : 0 });
+    });
+    return out;
+}
+
+// What Hyprland lists, plus a switched-off entry for every plugged-in screen it does not.
+// `hint` is the panel's size, only used to draw it in the layout until it has real modes.
+function mergeKnown(hypr, known) {
+    var have = {};
+    hypr.forEach(function (m) { have[m.name] = true; });
+    var extra = (known || []).filter(function (k) { return !have[k.name]; }).map(function (k) {
+        return { name: k.name, desc: "", on: false, w: 0, h: 0, hz: 0, x: 0, y: 0, scale: 1,
+                 transform: 0, modes: [], hint: k.w > 0 ? { w: k.w, h: k.h } : null };
+    });
+    return hypr.concat(extra);
+}
+
+// The draft screens whose on / off differs from what Hyprland reports (after Apply).
+function mismatched(draft, live) {
+    return draft.filter(function (d) {
+        var m = live.filter(function (x) { return x.name === d.name; })[0];
+        return m && m.on !== d.on;
+    });
+}

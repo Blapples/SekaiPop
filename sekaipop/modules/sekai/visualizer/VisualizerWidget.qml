@@ -305,7 +305,29 @@ PanelWindow {
     readonly property bool useAnalyzer: win.isSekai && VisualizerService.analyzer && !win.analyzerFailed
     readonly property bool wantAudio: win.switchedOn && !EditMode.active
         && (VisualizerService.alwaysListen || win.anyPlaying)
-        && (gate.show || FocusService.visualizerKeepsListening)
+        && (gate.show || FocusService.visualizerKeepsListening || audioHold.running)
+
+    // Desktop Focus Mode: the audio tap is not stopped the moment the widgets go away, only after
+    // a minute of staying away. Starting a capture of the output (parec / pw-record) makes
+    // PipeWire re-plan the graph (the capture asks for a short buffer, so the quantum can drop for
+    // everyone), and stopping it plans again; that is the half-second dropout in the music when
+    // going between an app and an empty workspace, because the tap started / stopped on every
+    // such switch. With the hold, going back and forth keeps the same capture running.
+    // (Settings -> Desktop -> Desktop Focus Mode -> Visualizer in background keeps it for good.)
+    Timer {
+        id: audioHold
+        interval: 60000
+    }
+
+    Connections {
+        target: gate
+        function onShowChanged() {
+            if (gate.show)
+                audioHold.stop()
+            else
+                audioHold.restart()
+        }
+    }
 
     Connections {
         target: VisualizerService

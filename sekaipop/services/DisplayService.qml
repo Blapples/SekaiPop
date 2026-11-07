@@ -37,6 +37,15 @@ Singleton {
     property int secondsLeft: 0
     readonly property int confirmSeconds: 15
     property var previous: []
+    // After Apply: look again that Hyprland really did it, and try the other way if not.
+    property bool checking: false
+    property int tries: 0
+    property string problem: ""
+
+    // What hyprctl lists, the screens the kernel knows, and the two joined (see DM.mergeKnown).
+    property var hyprLive: []
+    property var known: []
+    property double knownAt: 0
 
     readonly property var scales: DM.SCALES
     readonly property int enabledCount: root.draft.filter(d => d.on).length
@@ -62,7 +71,7 @@ Singleton {
                     console.warn("DisplayService: couldn't read `hyprctl -j monitors all`")
                     return
                 }
-                root.live = parsed.map(m => ({
+                root.hyprLive = parsed.map(m => ({
                     name: String(m.name),
                     desc: String(m.description || ""),
                     on: m.disabled !== true,
@@ -75,11 +84,55 @@ Singleton {
                     transform: m.transform | 0,
                     modes: DM.parseModes(m.availableModes || [])
                 }))
-                // Never replace what you are in the middle of changing.
-                if (!root.dirty && !root.confirming)
-                    root.resetDraft()
+                // The kernel's list changes rarely: look it up again only now and then.
+                if (Date.now() - root.knownAt > 30000 && !knownReader.running)
+                    knownReader.running = true
+                else
+                    root.mergeLive()
             }
         }
+    }
+
+    // Screens that are plugged in, whether or not Hyprland lists them.
+    Process {
+        id: knownReader
+        command: ["sh", root.script, "known"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.known = DM.parseKnown(text)
+                root.knownAt = Date.now()
+                root.mergeLive()
+            }
+        }
+    }
+
+    function mergeLive() {
+        root.live = DM.mergeKnown(root.hyprLive, root.known)
+        // Never replace what you are in the middle of changing.
+        if (!root.dirty && !root.confirming)
+            root.resetDraft()
+        root.checkApplied()
+    }
+
+    // After Apply: did Hyprland switch the screens the way the draft says? If not, try
+    // `hyprctl keyword monitor` (displays.sh force), twice; after that say so.
+    function checkApplied() {
+        if (!root.checking || runner.running)
+            return
+        const bad = DM.mismatched(root.draft, root.live)
+        if (bad.length === 0) {
+            root.checking = false
+            root.problem = ""
+            return
+        }
+        if (root.tries < 2) {
+            root.tries += 1
+            const specs = root.draftSpecs().filter(s => bad.some(d => s.split("|")[0] === d.name))
+            runner.exec(["sh", root.script, "force"].concat(specs))
+            return
+        }
+        root.checking = false
+        root.problem = "Hyprland did not switch " + bad.map(d => d.name).join(", ") + (bad[0].on ? " on" : " off") + ". What it said is in ~/.cache/sekaipop/displays.log"
     }
 
     // While the card is on screen something keeps it fresh (see SettingsPageHyprland).
@@ -105,7 +158,8 @@ Singleton {
                 x: m.on ? m.x : Math.round(edge),
                 y: m.on ? m.y : 0,
                 transform: m.transform,
-                modes: m.modes
+                modes: m.modes,
+                hint: m.hint || null
             }
         })
         // Only when something really differs: the controls are rebuilt by a new list,
@@ -135,7 +189,9 @@ Singleton {
     // leaves a gap under a pixel instead.
     function sizeOf(d) {
         const mode = DM.modeById(d.modes, d.modeId)
-        const sz = DM.logicalSize(mode ? mode.w : 0, mode ? mode.h : 0, d.scale, d.transform)
+        // A screen Hyprland does not list has no modes yet: draw it at the panel's own size.
+        const base = mode || d.hint || { w: 0, h: 0 }
+        const sz = DM.logicalSize(base.w, base.h, d.scale, d.transform)
         return { w: Math.ceil(sz.w - 1e-6), h: Math.ceil(sz.h - 1e-6) }
     }
 
@@ -304,6 +360,9 @@ Singleton {
         if (!root.dirty || root.confirming)
             return
         root.previous = root.liveSpecs()
+        root.problem = ""
+        root.tries = 0
+        root.checking = true
         runner.exec(["sh", root.script, "apply"].concat(root.draftSpecs()))
         root.secondsLeft = root.confirmSeconds
         root.confirming = true
@@ -317,6 +376,7 @@ Singleton {
             return
         countdown.stop()
         root.confirming = false
+        root.checking = false
         root.dirty = false
         runner.exec(["sh", root.script, "save"].concat(root.draftSpecs()))
         readAgain.restart()
@@ -328,6 +388,8 @@ Singleton {
             return
         countdown.stop()
         root.confirming = false
+        root.checking = false
+        root.problem = ""
         runner.exec(["sh", root.script, "apply"].concat(root.previous))
         root.dirty = false
         readAgain.restart()
@@ -342,6 +404,8 @@ Singleton {
 
     Process {
         id: runner
+        // The script is done: give Hyprland a moment, then look at what it did.
+        onExited: readAgain.restart()
     }
 
     Timer {

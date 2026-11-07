@@ -149,7 +149,7 @@ Item {
     property bool wifiManualScanning: false
     property string wifiConnectingSsid: ""
     property string wifiConnectError: ""
-    property var bluetoothDevices: []      // [{address, name, connected, battery}]
+    property var bluetoothDevices: []      // [{address, name, connected, paired, battery}]
     property bool bluetoothScanning: false
     property bool bluetoothManualScanning: false
     property string bluetoothConnectingAddress: ""
@@ -159,10 +159,12 @@ Item {
     signal wifiAdvancedRequested()
     signal wifiConnectRequested(string ssid, string password)
     signal wifiDisconnectRequested(string ssid)
+    signal wifiForgetRequested(string ssid)
     signal bluetoothScanRequested()
     signal bluetoothAdvancedRequested()
     signal bluetoothConnectRequested(string address)
     signal bluetoothDisconnectRequested(string address)
+    signal bluetoothForgetRequested(string address)
 
     // ===== audio device picker + per-app mixer =====
     property string audioDialogKind: "" // "", "speaker", or "microphone"
@@ -2460,6 +2462,7 @@ Item {
         onAdvancedRequested: face.wifiAdvancedRequested()
         onConnectRequested: (ssid, password) => face.wifiConnectRequested(ssid, password)
         onDisconnectRequested: ssid => face.wifiDisconnectRequested(ssid)
+        onForgetRequested: ssid => face.wifiForgetRequested(ssid)
     }
 
     BluetoothDialog {
@@ -2475,6 +2478,7 @@ Item {
         onAdvancedRequested: face.bluetoothAdvancedRequested()
         onConnectRequested: address => face.bluetoothConnectRequested(address)
         onDisconnectRequested: address => face.bluetoothDisconnectRequested(address)
+        onForgetRequested: address => face.bluetoothForgetRequested(address)
     }
 
     VolumeMixerDialog {

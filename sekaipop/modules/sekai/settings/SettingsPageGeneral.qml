@@ -262,6 +262,28 @@ SettingsPage {
     }
 
     SectionCard {
+        title: "Screen corners"
+
+        SettingToggle {
+            icon: "swipe_vertical"
+            label: "Scroll in the top corners"
+            detail: SettingsService.flag("corners.scroll")
+                ? (SettingsService.flag("corners.swap") ? "Left: brightness · Right: volume" : "Left: volume · Right: brightness")
+                : "OFF"
+            checked: SettingsService.flag("corners.scroll")
+            onToggled: SettingsService.toggle("corners.scroll")
+        }
+
+        SettingToggle {
+            icon: "swap_horiz"
+            label: "Swap the corners"
+            detail: SettingsService.flag("corners.swap") ? "Left: brightness · Right: volume" : "Left: volume · Right: brightness"
+            checked: SettingsService.flag("corners.swap")
+            onToggled: SettingsService.toggle("corners.swap")
+        }
+    }
+
+    SectionCard {
         title: "Launcher & lock"
 
         SettingToggle {

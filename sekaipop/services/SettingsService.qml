@@ -42,6 +42,10 @@ Singleton {
         "bar.media": true,
         "bar.utilButtons": true,
         "bar.resources": false,         // CPU & RAM pill: off in the default bar (switch it on here)
+        "bar.screenTimeFormat": "short", // how the Screen time pill writes the time: short (3h 12m) | clock (03:12) | seconds (03:12:45); right-click on the pill cycles it
+        "bar.timer": true,              // Timer pill: the clock of a running timer / stopwatch / pomodoro, a click opens their card
+        "bar.netSpeed": true,           // Network speed pill: download and upload; off = nothing is read
+        "bar.screenTime": true,         // Screen time pill: today's time at the screen (ScreenTimeService); off = nothing is counted
         "bar.battery": true,
         "bar.keyboardLayout": true,
         "bar.notifications": true,
@@ -80,6 +84,10 @@ Singleton {
         "notify.buzz": true,
         // Low-battery notifications at 20 / 15 / 10 / 5 % while running on battery (services/BatteryAlertService.qml). A desktop with no battery never sees them.
         "battery.alerts": true,
+        // Scroll the wheel with the pointer in the top-left / top-right corner of a screen: volume / brightness (services/CornerScrollService.qml). Off by default: the strips take the top pixel rows next to the corners.
+        "corners.scroll": false,
+        // Brightness on the left corner and volume on the right instead.
+        "corners.swap": false,
         "panel.hotEdge": true,
         "panel.hotDwell": 140,
         // The hot edge raises only the tip of the Quick Panel phone (its clock and date); a click on it brings the whole phone up, and moving the mouse away lowers it. Off = the hot edge opens the whole phone at once.
@@ -89,6 +97,22 @@ Singleton {
         "quick.flat": false,
         // The soft shadow under every phone (Quick Panel, Apps, Wallpapers, Settings). Off = no shadow at all.
         "quick.phoneShadow": true,
+        // The phone mirror (services/PhoneMirrorService.qml): your Android phone, live, on a phone at the side of the screen (scrcpy + adb).
+        "phoneMirror.edge": "left",          // the side it comes up on: left | right
+        "phoneMirror.autoStart": true,       // opening the panel starts scrcpy (off: the panel comes up with a Start key)
+        "phoneMirror.notch": true,           // the Quick phone's notch over the top of the picture
+        "phoneMirror.height": 88,            // how much of the monitor's height it takes, percent
+        "phoneMirror.audio": false,          // play the phone's sound on this computer (Android 11 or newer)
+        "phoneMirror.stayAwake": false,      // keep the phone awake while it is shown
+        "phoneMirror.turnScreenOff": false,  // turn the phone's own screen off while it is shown (touch can lag on some phones)
+        "phoneMirror.autoUnlock": true,      // wake the phone and swipe its lock screen up before mirroring
+        "phoneMirror.keyboard": "uhid",      // uhid (the phone sees a real keyboard) | sdk (scrcpy's injected text, if uhid is refused)
+        "phoneMirror.clipboardSync": true,   // copy on one side, paste on the other
+        "phoneMirror.maxFps": 0,             // 0 = the phone's own frame rate
+        "phoneMirror.bitRate": "8M",         // the video's bit rate; lower it on a weak Wi-Fi
+        "phoneMirror.keepWarm": 120,         // seconds the mirror stays up after the panel is closed (0 = stop at once)
+        "phoneMirror.serial": "",            // which phone, when more than one is plugged in (adb devices); "" = the first
+        "phoneMirror.address": "",           // a phone on Wi-Fi: host:port, tried again each time the panel opens
         // A plain letter typed while the phone is up on Quick starts a search on the Apps screen.
         "panel.typeToSearch": true,
         // Which window opens when you pick the avatar or banner: auto (kdialog, else zenity, else yad) | kdialog | zenity (the desktop portal's dialog) | yad.
@@ -315,6 +339,9 @@ Singleton {
             media: root.flag("bar.media"),
             utilButtons: root.flag("bar.utilButtons") && anyKey,
             resources: root.flag("bar.resources"),
+            screenTime: root.flag("bar.screenTime"),
+            timer: root.flag("bar.timer"),
+            netSpeed: root.flag("bar.netSpeed"),
             battery: root.flag("bar.battery"),
             keyboardLayout: root.flag("bar.keyboardLayout"),
             notifications: root.flag("bar.notifications"),

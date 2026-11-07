@@ -3,6 +3,7 @@ import QtQuick
 import Qt.labs.folderlistmodel
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import qs.services
 import qs.modules.common
 
@@ -495,6 +496,29 @@ Singleton {
         root.restackingLow = true;
         restackLowOff.restart();
         restackOff.restart();
+    }
+
+    // mpvpaper maps its surface only once its first frame is ready, and at login (a big
+    // video, hardware decoding starting up, a busy GPU) that can be many seconds after the
+    // process started - long after the restacks MpvpaperWallpaper.qml schedules by timer. The
+    // video then lands on top of the widgets and they look hidden until Edit Desktop stops it.
+    // Hyprland says when a layer surface maps (`openlayer>>namespace`; mpvpaper's namespace is
+    // "mpvpaper"), so restack at that moment instead of guessing a delay.
+    Connections {
+        target: Hyprland
+
+        function onRawEvent(event) {
+            if (event.name === "openlayer" && String(event.data).toLowerCase().indexOf("mpvpaper") !== -1)
+                mpvMappedRestack.restart()
+        }
+    }
+
+    Timer {
+        id: mpvMappedRestack
+        // Lets Hyprland finish placing the new surface first; a second monitor's mpvpaper
+        // mapping within this time just restarts it (one restack covers both).
+        interval: 120
+        onTriggered: root.restackWidgets()
     }
 
     Timer {

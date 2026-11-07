@@ -20,6 +20,7 @@ const NotesService = { adoptSet: n => noteCalls.push(["adopt", n]), renameSet: (
 const mk = (n, fav) => ({ name: n, data: { theme: { g: n }, _meta: Object.assign({ name: n, saved: 5, v: 1 }, fav ? { favorite: true } : {}) } })
 const jobs = []
 const root = { presets: [mk("Day"), mk("Night"), mk("Zed")], lastName: "", script: "/s.sh", enqueue: a => jobs.push(a), refreshLive() {}, capture: () => ({ theme: { g: "cap" } }) }
+root.wornSettings = () => null    // these presets hold no settings
 for (const n of ["find", "byName", "isFavorite", "setFavorite", "toggleFavorite", "stable", "digestOf", "write", "framePaths"])
     root[n] = eval("(" + grab(n) + ")")
 const names = () => root.presets.map(p => p.name)

@@ -753,9 +753,16 @@ PanelWindow {
                             // when the mouse rests right on a boundary.
                             readonly property real swapMargin: 3
 
-                            // Top of the floating copy, kept inside the list's box.
+                            // The held task is shown as a small one-line chip under the
+                            // pointer (not a full copy of the row: a long, wrapped task
+                            // covered the rows around it and hid where it would land). The
+                            // row's own slot, at its real height, is what shows the spot.
+                            readonly property real ghostH: 30
+                            readonly property real ghostW: Math.min(listBox.width, 190)
+
+                            // Top of the chip, centred on the pointer, kept inside the list's box.
                             readonly property real ghostTop:
-                                Math.max(0, Math.min(pointerY - dragGrab, listBox.height - dragHeight))
+                                Math.max(0, Math.min(pointerY - ghostH / 2, listBox.height - ghostH))
 
                             function beginDrag(index, title, done, h, grab, py) {
                                 list.dragTitle = title
@@ -782,18 +789,20 @@ PanelWindow {
                                 TodoService.commitOrder()
                             }
 
-                            // Move the held task past a neighbour once the copy's LEADING
-                            // edge (bottom edge going down, top edge going up) is past that
-                            // neighbour's middle.
+                            // Move the held task past a neighbour once the pointer (the
+                            // chip's centre) is past that neighbour's middle.
                             //
-                            // The old rule ("whichever slot the copy's centre is over") broke
-                            // as soon as tasks had different heights (a wrapped, two-line
-                            // task next to a one-line one): after a swap the slot moved
-                            // out from under the copy's centre, so the very next update
-                            // swapped it straight back, and so on every frame. That was the
-                            // shaking at specific spots. Here, after a swap the rule for
-                            // swapping back is strictly harder to meet than the rule that
-                            // just fired, whatever the heights, so it settles.
+                            // The rule "whichever slot the pointer is over" breaks as soon as
+                            // tasks have different heights (a wrapped, two-line task next to
+                            // a one-line one): after a swap the slot moves out from under the
+                            // pointer, so the very next update swaps it straight back, and so
+                            // on every frame. That was the shaking at specific spots. Here,
+                            // after a swap down the way back up needs the pointer above
+                            // top + h(neighbour) / 2 - margin, while the swap itself needed it
+                            // below top + h(held) + gap + h(neighbour) / 2 + margin: swapping
+                            // back is strictly harder than the rule that just fired, whatever
+                            // the heights, so it settles (and the chip's own height, which is
+                            // fixed, no longer takes part).
                             //
                             // All the geometry comes from the rows' own heights (not where
                             // they happen to be mid-animation), and several rows can be
@@ -814,8 +823,7 @@ PanelWindow {
                                 }
                                 const sp = list.spacing
                                 const m = list.swapMargin
-                                const gTop = (list.contentY - list.originY) + list.ghostTop
-                                const gBottom = gTop + list.dragHeight
+                                const gMid = (list.contentY - list.originY) + list.ghostTop + list.ghostH / 2
 
                                 let at = list.dragFrom
                                 let top = 0                      // top of the held task's slot
@@ -823,13 +831,13 @@ PanelWindow {
                                     top += hs[i] + sp
 
                                 for (let guard = 0; guard < n; guard++) {
-                                    if (at < n - 1 && gBottom > top + hs[at] + sp + hs[at + 1] / 2 + m) {
+                                    if (at < n - 1 && gMid > top + hs[at] + sp + hs[at + 1] / 2 + m) {
                                         const nb = hs[at + 1]
                                         top += nb + sp
                                         hs[at + 1] = hs[at]
                                         hs[at] = nb
                                         at++
-                                    } else if (at > 0 && gTop < top - sp - hs[at - 1] / 2 - m) {
+                                    } else if (at > 0 && gMid < top - sp - hs[at - 1] / 2 - m) {
                                         const nb = hs[at - 1]
                                         top -= nb + sp
                                         hs[at - 1] = hs[at]
@@ -904,7 +912,14 @@ PanelWindow {
                                 readonly property real textHeight: row.editing ? editor.implicitHeight : label.implicitHeight
 
                                 width: ListView.view ? ListView.view.width : 0
-                                height: Math.max(36, row.textHeight + 14)
+
+                                // The task being dragged keeps only a short slot while it is held
+                                // (its text is on the chip), so a long, wrapped task does not leave
+                                // a tall empty box that pushes the others out of view. The rows'
+                                // own heights drive the swap rule, so it uses this one too. No
+                                // animation on purpose: the rule reads the heights as they are.
+                                readonly property bool held: list.dragFrom === row.index
+                                height: row.held ? 36 : Math.max(36, row.textHeight + 14)
 
                                 function beginEdit() {
                                     row.editing = true
@@ -928,6 +943,9 @@ PanelWindow {
 
                                 HoverHandler {
                                     id: hover
+                                    // Non-blocking, so KeysOnPoint (on the window) still hears
+                                    // the pointer over a row and the keyboard works while editing.
+                                    blocking: false
                                 }
 
                                 // Rows the mouse sweeps over mid-drag shouldn't light up and
@@ -951,10 +969,10 @@ PanelWindow {
                                     z: 10
                                     anchors.fill: parent
                                     radius: 10
-                                    visible: list.dragFrom === row.index
+                                    visible: row.held
                                     color: mt.pSurfaceHover
                                     border.width: 2
-                                    border.color: mt.pLine
+                                    border.color: mt.accentCyan
                                 }
 
                                 // The checkbox: navy outline, mint-to-cyan when ticked.
@@ -1014,7 +1032,7 @@ PanelWindow {
                                     x: 40
                                     y: Math.round((row.height - label.implicitHeight) / 2)
                                     width: row.width - 40 - 10
-                                    visible: !row.editing
+                                    visible: !row.editing && !row.held
                                     text: row.title
                                     wrapMode: Text.Wrap
                                     color: row.done ? mt.pInkSub : mt.pInk
@@ -1164,14 +1182,17 @@ PanelWindow {
                             opacity: 0.35
                         }
 
-                        // The copy of the held task that follows the mouse: same
-                        // navy outline and hard shadow as the card itself.
+                        // The held task, as a small chip that follows the mouse: one line,
+                        // the text cut short, so it never hides the rows it passes over.
+                        // Same navy outline and hard shadow as the card itself; it sits at
+                        // the right end, where the grip you are holding is.
                         Item {
                             id: ghost
                             visible: list.dragging
                             z: 5
-                            width: listBox.width
-                            height: list.dragHeight
+                            width: list.ghostW
+                            height: list.ghostH
+                            x: listBox.width - width
                             y: list.ghostTop
 
                             Rectangle {
@@ -1193,11 +1214,11 @@ PanelWindow {
 
                             Rectangle {
                                 id: ghostBox
-                                x: 8
-                                y: 7
-                                width: 22
-                                height: 22
-                                radius: 7
+                                x: 6
+                                y: Math.round((ghost.height - height) / 2)
+                                width: 18
+                                height: 18
+                                radius: 6
                                 color: mt.pSurface
                                 border.width: 2.5
                                 border.color: mt.pLine
@@ -1218,20 +1239,22 @@ PanelWindow {
                                     color: mt.colBorder
                                     anchors.centerIn: parent
                                     name: "check"
-                                    size: 16
+                                    size: 13
                                     weight: 700
                                 }
                             }
 
                             Text {
-                                x: 40
+                                x: 30
                                 y: Math.round((ghost.height - implicitHeight) / 2)
-                                width: ghost.width - 40 - 10   // same as a row's label, so it wraps the same
+                                width: ghost.width - 30 - 28   // room for the grip on the right
                                 text: list.dragTitle
-                                wrapMode: Text.Wrap
+                                elide: Text.ElideRight
+                                maximumLineCount: 1
+                                wrapMode: Text.NoWrap
                                 color: list.dragDone ? mt.pInkSub : mt.pInk
                                 font.family: mt.fontFamily
-                                font.pixelSize: 14
+                                font.pixelSize: 13
                                 font.weight: Font.DemiBold
                                 font.strikeout: list.dragDone
                             }
@@ -1239,18 +1262,18 @@ PanelWindow {
                             // The grip, on a small backing so it never sits on top of text.
                             Rectangle {
                                 anchors.right: parent.right
-                                anchors.rightMargin: 4
-                                y: 5
-                                width: 26
-                                height: 26
-                                radius: 9
+                                anchors.rightMargin: 3
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 22
+                                height: 22
+                                radius: 8
                                 color: mt.pSurface
 
                                 MaterialIcon {
                                     anchors.centerIn: parent
                                     color: mt.pInk
                                     name: "drag_indicator"
-                                    size: 18
+                                    size: 16
                                     weight: 600
                                 }
                             }

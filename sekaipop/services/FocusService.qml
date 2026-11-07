@@ -85,6 +85,31 @@ Singleton {
     property var screens: ({})
     property var detail: ({})
 
+    // Shell surfaces that take a whole monitor but are not Hyprland windows (a layer-shell panel,
+    // like the readers at full width): claim id -> monitor name. Each counts on its monitor as a
+    // maximized app, on whatever workspace is showing, so the widgets there hide and stop exactly
+    // as they do for a fullscreen window. The claim holds while the surface says so; the surface
+    // lets go of it when it shrinks to a side card, is minimized or closed.
+    property var claims: ({})
+
+    function claim(id, screenName) {
+        if (!id || !screenName || root.claims[id] === screenName)
+            return
+        const next = Object.assign({}, root.claims)
+        next[id] = screenName
+        root.claims = next
+        root.schedule()
+    }
+
+    function release(id) {
+        if (!(id in root.claims))
+            return
+        const next = Object.assign({}, root.claims)
+        delete next[id]
+        root.claims = next
+        root.schedule()
+    }
+
     // Edit Desktop needs every widget on show, whatever is open (it also parks
     // you on an empty workspace, see EditMode.park, but it must not depend on that).
     readonly property bool editing: EditMode.active || EditMode.screenName !== ""
@@ -134,6 +159,23 @@ Singleton {
                 fullscreen: o.fullscreen === undefined ? 0 : o.fullscreen,
                 cls: typeof o.class === "string" ? o.class : "",
                 known: known
+            })
+        }
+
+        // The claims, as fullscreen windows pinned to their monitor (FocusMath counts a pinned
+        // window on its monitor whatever workspace is up, and a fullscreen one as tiled).
+        for (const id of Object.keys(root.claims)) {
+            wins.push({
+                address: "claim:" + id,
+                workspaceId: 0,
+                monitor: root.claims[id],
+                floating: false,
+                mapped: true,
+                hidden: false,
+                pinned: true,
+                fullscreen: 1,
+                cls: "",
+                known: true
             })
         }
 

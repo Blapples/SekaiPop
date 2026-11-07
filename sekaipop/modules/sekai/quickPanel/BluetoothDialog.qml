@@ -4,16 +4,19 @@ import qs.modules.common
 import qs.modules.common.widgets
 import qs.modules.sekai.phone
 
-// The paired-device list that drops down over the phone's screen when
+// The device list that drops down over the phone's screen when
 // you right-click the Bluetooth tile — same idea as NetworkDialog.qml,
 // simpler: no password step, so a tap just connects or disconnects.
 //
-// Scoped to devices already paired elsewhere (`bluetoothctl devices
-// Paired`) — pairing a brand-new device needs a PIN/confirm handshake
-// (bluetoothctl's agent prompts) that doesn't fit a quick-toggle list
-// like this one, so "Refresh" here just re-checks paired/connected
-// status rather than scanning for anything new. Pair new devices from
-// a proper Bluetooth settings app first; they'll show up here after.
+// Opening it shows the paired devices at once and starts looking for
+// nearby ones (`bluetoothctl scan on`, about 9 seconds); the list is
+// read again every second, so devices appear as they are found. Paired
+// devices come first, then the nearby ones. Tapping a nearby device
+// pairs it and connects (QuickSource.qml: bluetoothPairScript) — that
+// works for headphones, speakers and the like. A device that asks for
+// a PIN (a keyboard, say) can't be paired from here: use "Advanced".
+// "Scan" runs the search again. Right-clicking a paired device slides a
+// Forget button (remove the pairing) in beside it; click again to put it away.
 Item {
     id: root
 
@@ -21,13 +24,13 @@ Item {
     readonly property var mt: Theme.of(QsWindow.window)
 
     property bool open: false
-    property var devices: []           // [{address, name, connected, battery (-1 = unknown)}]
+    property var devices: []           // [{address, name, connected, paired, battery (-1 = unknown)}]
     property bool scanning: false
-    // See NetworkDialog.qml's manualScanning: true only for a
-    // button-requested refresh, kept separate from `scanning` (which
-    // also covers the quiet fetch on open and the live background poll
-    // — see QuickSource.qml's bluetoothLiveRefresh) so the button
-    // doesn't visibly flash "Refreshing…" on its own on every poll.
+    // See NetworkDialog.qml's manualScanning: true while a search for
+    // devices runs (from the moment this opens or "Scan" is pressed),
+    // kept separate from `scanning` (which also covers every quiet
+    // background read — see QuickSource.qml's bluetoothLiveRefresh) so
+    // the button doesn't flash "Scanning…" on its own on every poll.
     property bool manualScanning: false
     property string connectingAddress: ""
     property string errorText: ""
@@ -37,6 +40,15 @@ Item {
     signal advancedRequested()
     signal connectRequested(string address)
     signal disconnectRequested(string address)
+    signal forgetRequested(string address)
+
+    // Which row (if any) is showing its Forget button. Cleared on close, and if the device leaves the list.
+    property string expandedAddress: ""
+    onOpenChanged: if (!open) expandedAddress = ""
+    onDevicesChanged: {
+        if (expandedAddress !== "" && !devices.some(d => d.address === expandedAddress))
+            expandedAddress = ""
+    }
 
     anchors.fill: parent
     visible: opacity > 0
@@ -116,7 +128,7 @@ Item {
             Text {
                 id: scanLabel
                 anchors.centerIn: parent
-                text: root.manualScanning ? "Refreshing…" : "Refresh"
+                text: root.manualScanning ? "Scanning…" : "Scan"
                 color: mt.pInk
                 font.family: mt.fontFamily
                 font.pixelSize: 14
@@ -183,7 +195,7 @@ Item {
             x: 28
             y: errorLabel.visible ? 90 : 66
             width: card.width - 56
-            text: "Devices paired elsewhere show up here. New pairing isn't done from this panel."
+            text: "Paired devices first, then nearby ones — tap a nearby device to pair."
             wrapMode: Text.Wrap
             color: mt.pInkSub
             font.family: mt.fontFamily
@@ -209,6 +221,22 @@ Item {
                 required property var modelData
 
                 readonly property bool busy: root.connectingAddress === modelData.address
+                // only a paired device has a pairing to forget
+                readonly property bool hasActions: modelData.paired !== false
+                readonly property bool forgetOpen: hasActions && root.expandedAddress === modelData.address
+
+                // 0 -> 1 as the Forget button comes in. One value drives the button's slide, fade
+                // and scale and the row text making room for it, so they always move together.
+                readonly property int forgetW: 84
+                property real reveal: forgetOpen ? 1 : 0
+                readonly property real forgetShift: (forgetW + 10) * Math.min(reveal, 1)
+                Behavior on reveal {
+                    NumberAnimation {
+                        duration: row.forgetOpen ? 320 : 200
+                        easing.type: row.forgetOpen ? Easing.OutBack : Easing.InCubic
+                        easing.overshoot: 1.3
+                    }
+                }
 
                 width: list.width
                 height: 64
@@ -241,7 +269,7 @@ Item {
                     id: batteryTag
                     visible: row.hasBattery
                     anchors.right: parent.right
-                    anchors.rightMargin: 18
+                    anchors.rightMargin: 18 + row.forgetShift
                     y: 21
                     spacing: 4
 
@@ -270,7 +298,7 @@ Item {
                 Text {
                     x: 50
                     y: 10
-                    width: parent.width - 50 - 14 - (row.hasBattery ? batteryTag.width + 10 : 0)
+                    width: parent.width - 50 - 14 - row.forgetShift - (row.hasBattery ? batteryTag.width + 10 : 0)
                     elide: Text.ElideRight
                     text: row.modelData.name
                     color: mt.pInk
@@ -283,9 +311,11 @@ Item {
                 Text {
                     x: 50
                     y: 34
-                    text: row.busy ? (row.modelData.connected ? "Disconnecting…" : "Connecting…")
-                        : row.modelData.connected ? "Connected — tap to disconnect"
-                        : "Paired — tap to connect"
+                    text: row.busy ? (row.modelData.connected ? "Disconnecting…"
+                                          : row.modelData.paired === false ? "Pairing…" : "Connecting…")
+                        : row.modelData.connected ? "Connected"
+                        : row.modelData.paired === false ? "Nearby"
+                        : "Paired"
                     color: mt.pInkSub
                     font.family: mt.fontFamily
                     font.pixelSize: 13
@@ -299,11 +329,64 @@ Item {
                     hoverEnabled: true
                     enabled: !row.busy
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: {
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: mouse => {
+                        if (mouse.button === Qt.RightButton) {
+                            if (row.hasActions)
+                                root.expandedAddress = row.forgetOpen ? "" : row.modelData.address
+                            return
+                        }
+                        root.expandedAddress = ""
                         if (row.modelData.connected)
                             root.disconnectRequested(row.modelData.address)
                         else
                             root.connectRequested(row.modelData.address)
+                    }
+                }
+
+                // Forget: slides in from the right edge (fade + a little scale) when the row is
+                // right-clicked, and slides back out when it is dismissed. Declared after the
+                // row's MouseArea so it sits on top and gets its own clicks.
+                Rectangle {
+                    id: forgetPill
+                    visible: row.reveal > 0.01
+                    x: row.width - row.forgetW - 14 + 36 * (1 - row.reveal)
+                    y: 14
+                    width: row.forgetW
+                    height: 36
+                    radius: 18
+                    opacity: Math.min(row.reveal, 1)
+                    scale: 0.82 + 0.18 * row.reveal
+                    transformOrigin: Item.Right
+                    color: forgetArea.containsMouse ? "#c0392b" : mt.pSurface
+                    border.width: 2
+                    border.color: forgetArea.containsMouse ? "#c0392b" : mt.pLine
+                    antialiasing: true
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: 120
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Forget"
+                        color: forgetArea.containsMouse ? "#ffffff" : "#c0392b"
+                        font.family: mt.fontFamily
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                    }
+
+                    MouseArea {
+                        id: forgetArea
+                        anchors.fill: parent
+                        enabled: row.forgetOpen
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.expandedAddress = ""
+                            root.forgetRequested(row.modelData.address)
+                        }
                     }
                 }
             }
@@ -312,9 +395,9 @@ Item {
         }
 
         Text {
-            visible: root.devices.length === 0 && !root.scanning
+            visible: root.devices.length === 0 && (root.manualScanning || !root.scanning)
             anchors.centerIn: list
-            text: "No paired devices"
+            text: root.manualScanning ? "Looking for devices…" : "No devices found"
             color: mt.pInkSub
             font.family: mt.fontFamily
             font.pixelSize: 16

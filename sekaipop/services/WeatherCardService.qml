@@ -36,6 +36,14 @@ Singleton {
     // it still works everywhere and reads as classic.)
     property string style: "classic"
     readonly property bool minimal: root.style === "minimal"
+
+    // The card's size: "2x2" (320 x 276 with the housing, the footprint the clock and the other
+    // cards share; both styles above live in it) or "1x1" (160 x 138: only the temperature, a
+    // quarter of the 2x2; it has no styles). Remembered across restarts. Switch it in Settings ->
+    // Desktop, with the second key that shows on the card while it is selected in Edit Desktop,
+    // or `ipc call weathercard size 2x2|1x1`.
+    property string size: "2x2"
+    readonly property bool tiny: root.size === "1x1"
     property real posX: -1           // -1 = never placed; widget picks a default
     property real posY: -1
     // The shell scale (ShellScale) posX / posY were saved at. They are in design
@@ -81,6 +89,19 @@ Singleton {
         root.setStyle(root.minimal ? "classic" : "minimal")
     }
 
+    // "1x1" (or "tiny"); anything else is "2x2". The style is kept while the card is 1x1.
+    function setSize(value) {
+        const v = (value === "1x1" || value === "tiny") ? "1x1" : "2x2"
+        if (v === root.size)
+            return
+        root.size = v
+        root.persist()
+    }
+
+    function toggleSize() {
+        root.setSize(root.tiny ? "2x2" : "1x1")
+    }
+
     // ===== persistence =====
     readonly property string script: Directories.script("state/weathercard-state.sh")
 
@@ -91,7 +112,8 @@ Singleton {
             scale: root.posScale,
             screen: root.screenName,
             shown: root.shown,
-            style: root.style
+            style: root.style,
+            size: root.size
         })
     }
 
@@ -111,6 +133,7 @@ Singleton {
             // the style it has.
             if (typeof s.style === "string")
                 root.style = s.style === "minimal" ? "minimal" : "classic"
+            root.size = s.size === "1x1" ? "1x1" : "2x2"
         } catch (e) {
             // No file yet (first run) or an unreadable one: keep the defaults.
         }

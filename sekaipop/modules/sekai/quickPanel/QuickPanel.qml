@@ -2491,8 +2491,13 @@ Scope {
                 // (The side buttons stand out of the right edge, past the padded box
                 // (2D: the flat Power button, bigger), so the box takes the mouse that
                 // far too.)
-                width: stage.quickInput ? restRect.width + (root.flat2d ? phone.powerStick : phone.buttonStick) * win.fit : 0
-                height: stage.quickInput ? Math.max(0, restRect.height - drop) : 0
+                // Nothing at all while the phone is away: the window now stays mapped after
+                // the first open (`win.everShown`), and restRect does not follow the phone
+                // down, so without this the box sat invisibly over the bottom-centre of the
+                // screen and took the hover meant for the hot edge (and the clicks for
+                // whatever was under it).
+                width: stage.quickInput && win.shown ? restRect.width + (root.flat2d ? phone.powerStick : phone.buttonStick) * win.fit : 0
+                height: stage.quickInput && win.shown ? Math.max(0, restRect.height - drop) : 0
             }
 
             // Click away inside hitRect: hitRect is the box around the tilted phone, so
@@ -2827,9 +2832,9 @@ Scope {
                         onNotificationsCleared: root.notificationSource.clearAll()
                         onPanelCloseRequested: root.close()
 
-                        // A quick (non-forced) list the moment either dialog
-                        // opens, so it's not sitting empty waiting for a
-                        // manual "Scan"/"Refresh" tap. Also hands the open
+                        // A list the moment either dialog opens (Wi-Fi also
+                        // starts a rescan), so it's not sitting empty waiting
+                        // for a manual "Scan"/"Refresh" tap. Also hands the open
                         // state down to QuickSource so wifiLiveRefresh/
                         // bluetoothLiveRefresh can keep polling (the cheap
                         // path, same as this initial call) for as long as
@@ -2837,15 +2842,19 @@ Scope {
                         // the audio mixer already had.
                         onNetworkDialogOpenChanged: {
                             root.source.networkDialogOpen = networkDialogOpen
+                            // Wi-Fi: show the networks NetworkManager already knows at
+                            // once AND start a real rescan, so nothing has to be pressed.
                             if (networkDialogOpen)
-                                root.source.scanWifi(false)
+                                root.source.scanWifi(true)
                         }
                         onBluetoothDialogOpenChanged: {
                             root.source.bluetoothDialogOpen = bluetoothDialogOpen
+                            // Bluetooth: show what BlueZ already knows at once AND start
+                            // looking for nearby devices, so nothing has to be pressed.
                             if (bluetoothDialogOpen)
-                                root.source.scanBluetooth()
+                                root.source.scanBluetooth(true)
                         }
-                        onWifiScanRequested: root.source.scanWifi(true, true)
+                        onWifiScanRequested: root.source.scanWifi(true)
                         onWifiAdvancedRequested: {
                             root.source.openNetworkSettings()
                             panelFace.networkDialogOpen = false
@@ -2853,6 +2862,7 @@ Scope {
                         }
                         onWifiConnectRequested: (ssid, password) => root.source.connectWifi(ssid, password)
                         onWifiDisconnectRequested: ssid => root.source.disconnectWifi(ssid)
+                        onWifiForgetRequested: ssid => root.source.forgetWifi(ssid)
                         onBluetoothScanRequested: root.source.scanBluetooth(true)
                         onBluetoothAdvancedRequested: {
                             root.source.openBluetoothSettings()
@@ -2861,6 +2871,7 @@ Scope {
                         }
                         onBluetoothConnectRequested: address => root.source.connectBluetoothDevice(address)
                         onBluetoothDisconnectRequested: address => root.source.disconnectBluetoothDevice(address)
+                        onBluetoothForgetRequested: address => root.source.forgetBluetoothDevice(address)
 
                         // Same "quick list the moment it opens" as the two
                         // above — one shared scan covers both sliders'
@@ -2969,8 +2980,9 @@ Scope {
                     x: win.railMinX * win.fit
                     y: win.railMinY * win.fit - root.bounce * win.fit
                        + root.lowLift
-                    width: stage.quickInput ? (win.railMaxX - win.railMinX) * win.fit : 0
-                    height: stage.quickInput ? (win.railMaxY - win.railMinY) * win.fit + root.bounce * win.fit * 2 : 0
+                    // (Also nothing while the phone is away, like hitRect.)
+                    width: stage.quickInput && win.shown ? (win.railMaxX - win.railMinX) * win.fit : 0
+                    height: stage.quickInput && win.shown ? (win.railMaxY - win.railMinY) * win.fit + root.bounce * win.fit * 2 : 0
                 }
 
                 Item {

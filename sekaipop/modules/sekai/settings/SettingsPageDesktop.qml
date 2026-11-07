@@ -276,6 +276,17 @@ SettingsPage {
             onToggled: UserCardService.setShown(!UserCardService.shown)
         }
 
+        SettingChoice {
+            label: "User card size"
+            sublabel: "1 x 1 is a quarter of the 2 x 2: just your avatar"
+            current: UserCardService.size
+            options: [
+                { id: "2x2", label: "2 x 2", icon: "close_fullscreen" },
+                { id: "1x1", label: "1 x 1", icon: "crop_square" }
+            ]
+            onPicked: id => UserCardService.setSize(id)
+        }
+
         SettingToggle {
             icon: "partly_cloudy_day"
             label: "Weather card"
@@ -295,6 +306,17 @@ SettingsPage {
             onPicked: id => WeatherCardService.setStyle(id)
         }
 
+        SettingChoice {
+            label: "Weather card size"
+            sublabel: "1 x 1 is a quarter of the 2 x 2: just the temperature"
+            current: WeatherCardService.size
+            options: [
+                { id: "2x2", label: "2 x 2", icon: "close_fullscreen" },
+                { id: "1x1", label: "1 x 1", icon: "crop_square" }
+            ]
+            onPicked: id => WeatherCardService.setSize(id)
+        }
+
         SettingToggle {
             icon: "calendar_month"
             label: "Calendar card"
@@ -304,11 +326,12 @@ SettingsPage {
 
         SettingChoice {
             label: "Calendar card size"
-            sublabel: "2 x 2 is the same size as the clock, user and weather cards"
+            sublabel: "2 x 2 is the same size as the clock, user and weather cards. 1 x 1 is a quarter of it: the day and the date"
             current: CalendarCardService.size
             options: [
                 { id: "full", label: "Full", icon: "open_in_full" },
-                { id: "2x2", label: "2 x 2", icon: "close_fullscreen" }
+                { id: "2x2", label: "2 x 2", icon: "close_fullscreen" },
+                { id: "1x1", label: "1 x 1", icon: "crop_square" }
             ]
             onPicked: id => CalendarCardService.setSize(id)
         }
@@ -322,13 +345,218 @@ SettingsPage {
 
         SettingChoice {
             label: "Palette card size"
-            sublabel: "2 x 2 is the same size as the clock, user and weather cards"
+            sublabel: "2 x 2 is the same size as the clock, user and weather cards. 1 x 1 is a quarter of it: a fan of the five colours"
             current: PaletteService.size
             options: [
                 { id: "full", label: "Full", icon: "open_in_full" },
-                { id: "2x2", label: "2 x 2", icon: "close_fullscreen" }
+                { id: "2x2", label: "2 x 2", icon: "close_fullscreen" },
+                { id: "1x1", label: "1 x 1", icon: "crop_square" }
             ]
             onPicked: id => PaletteService.setSize(id)
+        }
+
+        SettingToggle {
+            icon: "water_drop"
+            label: "Water tank"
+            detail: "A glass on the desktop that fills as you drink. Click it for a glass of water"
+            checked: WaterTankService.shown
+            onToggled: WaterTankService.setShown(!WaterTankService.shown)
+        }
+
+        SettingChoice {
+            label: "Water tank size"
+            sublabel: "1 x 1 is one glass you tap. 2 x 2 adds the keys, the last seven days and the streak"
+            current: WaterTankService.size
+            options: [
+                { id: "2x2", label: "2 x 2", icon: "close_fullscreen" },
+                { id: "1x1", label: "1 x 1", icon: "crop_square" }
+            ]
+            onPicked: id => WaterTankService.setSize(id)
+        }
+
+        SettingStepper {
+            icon: "flag"
+            label: "Water goal"
+            from: 1
+            to: 20
+            step: 1
+            suffix: " glasses"
+            value: WaterTankService.goal
+            onMoved: v => WaterTankService.setGoal(v)
+        }
+
+        SettingStepper {
+            icon: "cup"
+            label: "Glass size"
+            from: 100
+            to: 1000
+            step: 50
+            suffix: " ml"
+            value: WaterTankService.glassMl
+            onMoved: v => WaterTankService.setGlassMl(v)
+        }
+
+        SettingToggle {
+            icon: "download"
+            label: "Downloader"
+            detail: "Copy a link, press the key, get the file. Works with yt-dlp on this computer, or a cobalt instance"
+            checked: DownloaderService.shown
+            onToggled: DownloaderService.setShown(!DownloaderService.shown)
+        }
+
+        SettingChoice {
+            label: "Downloader size"
+            sublabel: "1 x 1 is one key: press it to download what you copied. 2 x 2 adds the options and the list of downloads"
+            current: DownloaderService.size
+            options: [
+                { id: "2x2", label: "2 x 2", icon: "close_fullscreen" },
+                { id: "1x1", label: "1 x 1", icon: "crop_square" }
+            ]
+            onPicked: id => DownloaderService.setSize(id)
+        }
+
+        SettingChoice {
+            label: "Download what"
+            sublabel: "Video with sound, only the sound, or video with no sound. The 1 x 1 key changes it with the wheel"
+            current: DownloaderService.mode
+            options: [
+                { id: "video", label: "Video", icon: "movie" },
+                { id: "audio", label: "Audio", icon: "music_note" },
+                { id: "mute", label: "Mute", icon: "volume_off" }
+            ]
+            onPicked: id => DownloaderService.setMode(id)
+        }
+
+        SettingChoice {
+            label: "Video quality"
+            sublabel: "The best it can have, up to this. Best takes the biggest there is"
+            current: DownloaderService.quality
+            options: [
+                { id: "max", label: "Best", icon: "diamond" },
+                { id: "1080", label: "1080p", icon: "monitor" },
+                { id: "720", label: "720p", icon: "monitor" },
+                { id: "480", label: "480p", icon: "monitor" }
+            ]
+            onPicked: id => DownloaderService.setQuality(id)
+        }
+
+        SettingChoice {
+            label: "Sound format"
+            sublabel: "For Audio. Cobalt knows Best, MP3, Opus and WAV"
+            current: DownloaderService.audioFormat
+            options: [
+                { id: "mp3", label: "MP3", icon: "music_note" },
+                { id: "opus", label: "Opus", icon: "music_note" },
+                { id: "m4a", label: "M4A", icon: "music_note" },
+                { id: "flac", label: "FLAC", icon: "music_note" },
+                { id: "wav", label: "WAV", icon: "music_note" },
+                { id: "best", label: "Best", icon: "music_note" }
+            ]
+            onPicked: id => DownloaderService.setAudioFormat(id)
+        }
+
+        SettingChoice {
+            label: "Downloader engine"
+            sublabel: "Auto tries what is installed in turn: yt-dlp (videos, sound), then gallery-dl (pictures), then the cobalt instance below. yt-dlp needs ffmpeg to save only the sound"
+            current: DownloaderService.engine
+            options: [
+                { id: "auto", label: "Auto", icon: "auto_awesome" },
+                { id: "ytdlp", label: "yt-dlp", icon: "desktop_windows" },
+                { id: "gallerydl", label: "gallery-dl", icon: "image" },
+                { id: "cobalt", label: "cobalt", icon: "cloud" }
+            ]
+            onPicked: id => DownloaderService.setEngine(id)
+        }
+
+        SettingToggle {
+            icon: "image"
+            label: "Ask which items to save"
+            detail: "For a post with several pictures or clips: tick the ones you want before they are saved. Needs the 2 x 2 size; at 1 x 1 everything is saved"
+            checked: DownloaderService.askWhich
+            onToggled: DownloaderService.setAskWhich(!DownloaderService.askWhich)
+        }
+
+        SettingChoice {
+            label: "Login from"
+            sublabel: "For Instagram, private posts and age limits: use the login of a browser you are signed in on. yt-dlp and gallery-dl read that browser's cookies, only to talk to the site you ask for"
+            current: DownloaderService.cookies
+            options: [
+                { id: "", label: "None", icon: "close" },
+                { id: "firefox", label: "Firefox", icon: "travel_explore" },
+                { id: "chrome", label: "Chrome", icon: "travel_explore" },
+                { id: "chromium", label: "Chromium", icon: "travel_explore" },
+                { id: "brave", label: "Brave", icon: "travel_explore" },
+                { id: "edge", label: "Edge", icon: "travel_explore" },
+                { id: "vivaldi", label: "Vivaldi", icon: "travel_explore" },
+                { id: "opera", label: "Opera", icon: "travel_explore" }
+            ]
+            onPicked: id => DownloaderService.setCookies(id)
+        }
+
+        SettingText {
+            label: "Cookies file"
+            sublabel: "Or a cookies.txt file (it is used instead of the browser above)"
+            value: DownloaderService.cookiesFile
+            placeholder: "none"
+            onSubmitted: text => DownloaderService.setCookiesFile(text)
+            onCleared: DownloaderService.setCookiesFile("")
+        }
+
+        SettingText {
+            label: "Subtitles"
+            sublabel: "A language to save subtitles in, like en or pt-BR. Empty = none. They go inside the video when ffmpeg is installed"
+            value: DownloaderService.subs
+            placeholder: "none"
+            onSubmitted: text => DownloaderService.setSubs(text)
+            onCleared: DownloaderService.setSubs("")
+        }
+
+        SettingChoice {
+            label: "File names"
+            sublabel: "Basic: the title. Pretty: the title and the site. Classic: site_id. Nerdy: the title, the quality, the site and the id"
+            current: DownloaderService.names
+            options: [
+                { id: "basic", label: "Basic", icon: "description" },
+                { id: "pretty", label: "Pretty", icon: "description" },
+                { id: "classic", label: "Classic", icon: "description" },
+                { id: "nerdy", label: "Nerdy", icon: "description" }
+            ]
+            onPicked: id => DownloaderService.setNames(id)
+        }
+
+        SettingText {
+            label: "Download folder"
+            sublabel: "Where the files go"
+            value: DownloaderService.folder
+            placeholder: "your Downloads folder"
+            onSubmitted: text => DownloaderService.setFolder(text)
+            onCleared: DownloaderService.setFolder("")
+        }
+
+        SettingText {
+            label: "cobalt instance"
+            sublabel: "The address of a cobalt instance you run, or one whose owner let you use it. The public ones use bot protection and are not for other programs"
+            value: DownloaderService.cobaltUrl
+            placeholder: "https://cobalt.example.org"
+            onSubmitted: text => DownloaderService.setCobaltUrl(text)
+            onCleared: DownloaderService.setCobaltUrl("")
+        }
+
+        SettingText {
+            label: "cobalt API key"
+            sublabel: "Only if the instance asks for one. Kept in a file only you can read, and never in a preset"
+            value: DownloaderService.cobaltKey
+            placeholder: "none"
+            onSubmitted: text => DownloaderService.setCobaltKey(text)
+            onCleared: DownloaderService.setCobaltKey("")
+        }
+
+        SettingToggle {
+            icon: "notifications"
+            label: "Tell me when a download is done"
+            detail: "A notification with the name of the file"
+            checked: DownloaderService.notify
+            onToggled: DownloaderService.setNotify(!DownloaderService.notify)
         }
 
         SettingToggle {

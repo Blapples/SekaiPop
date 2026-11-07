@@ -34,7 +34,8 @@ PanelWindow {
     readonly property real roomW: win.width / win.uiScale
     readonly property real roomH: win.height / win.uiScale
 
-    visible: LyricsService.pickerOpen
+    // Stays up while the card pops away, so it can leave the way it came.
+    visible: LyricsService.pickerOpen || card.popProgress > 0.001
 
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "sekaipop-lyrics-sources"
@@ -62,11 +63,50 @@ PanelWindow {
         Keys.onEscapePressed: LyricsService.closePicker()
     }
 
-    Component.onCompleted: card.pop()
+    // A new full-screen layer window is a small one for its first frames, and a card centred in
+    // it would slide from the top-left corner to its place while it popped. So the pop waits
+    // until the window is the size of the screen (or, if that never reads true, a moment).
+    readonly property bool sized: win.visible && win.width > 0 && win.height > 0
+        && (!win.screen || (win.width >= win.screen.width - 2 && win.height >= win.screen.height - 2))
 
-    onVisibleChanged: {
-        if (win.visible)
+    function startPop(): void {
+        if (win.sized)
             card.pop()
+        else
+            popFallback.restart()
+    }
+
+    onSizedChanged: {
+        if (win.sized && LyricsService.pickerOpen && popFallback.running) {
+            popFallback.stop()
+            card.pop()
+        }
+    }
+
+    Timer {
+        id: popFallback
+        interval: 300
+        repeat: false
+        onTriggered: {
+            if (LyricsService.pickerOpen && card.popProgress === 0)
+                card.pop()
+        }
+    }
+
+    Connections {
+        target: LyricsService
+
+        function onPickerOpenChanged(): void {
+            if (LyricsService.pickerOpen)
+                win.startPop()
+            else
+                card.away()
+        }
+    }
+
+    Component.onCompleted: {
+        if (LyricsService.pickerOpen)
+            win.startPop()
     }
 
     // One line of the list: a round radio, the name, and on the right what it found.
@@ -253,6 +293,8 @@ PanelWindow {
     ScaleHost {
         anchors.fill: parent
         factor: win.uiScale
+        // Nothing is clickable while the card is shrinking away.
+        enabled: LyricsService.pickerOpen
 
         Pill {
             id: card
@@ -275,34 +317,45 @@ PanelWindow {
             width: implicitWidth
             height: implicitHeight
 
-            property real popProgress: 1
+            // 0 = gone, 1 = open. The same motion as the bar's popup pills (SekaiPopup.qml): it
+            // grows out of nothing in its own middle with a small bounce, and shrinks all the
+            // way back into it.
+            property real popProgress: 0
 
             function pop() {
+                awayAnim.stop()
                 popAnim.restart()
             }
 
-            SequentialAnimation {
-                id: popAnim
-                ScriptAction { script: card.popProgress = 0 }
-                PauseAnimation { duration: 40 }
-                NumberAnimation {
-                    target: card
-                    property: "popProgress"
-                    from: 0
-                    to: 1
-                    duration: 260
-                    easing.type: Easing.OutBack
-                    easing.overshoot: 1.4
-                }
+            function away() {
+                popAnim.stop()
+                awayAnim.restart()
             }
 
-            opacity: Math.min(1, card.popProgress * 3)
-            transform: Scale {
-                origin.x: card.width / 2
-                origin.y: 0
-                xScale: 0.86 + 0.14 * card.popProgress
-                yScale: 0.86 + 0.14 * card.popProgress
+            NumberAnimation {
+                id: popAnim
+                target: card
+                property: "popProgress"
+                to: 1
+                duration: 340
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.3
             }
+
+            NumberAnimation {
+                id: awayAnim
+                target: card
+                property: "popProgress"
+                to: 0
+                duration: 170
+                easing.type: Easing.InCubic
+            }
+
+            // It fades in a touch as it starts, but never out: it is whole until it has gone
+            // into its middle.
+            opacity: LyricsService.pickerOpen ? Math.min(1, card.popProgress * 8) : 1
+            transformOrigin: Item.Center
+            scale: Math.max(0, card.popProgress)
 
             // Takes the clicks that land on the card, so they do not close it.
             MouseArea {

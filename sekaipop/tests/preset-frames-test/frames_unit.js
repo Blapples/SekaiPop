@@ -48,8 +48,8 @@ for (const n of ["stable", "digestOf", "isCurrent", "variantKey", "framePaths", 
 const PresetWidgets = {
     list: reg.load({
         ClockService: snapService({ x: 1, y: 2, shown: true, design: 0, use24h: false }),
-        UserCardService: snapService({ x: 3, y: 4, shown: true }),
-        WeatherCardService: snapService({ x: 5, y: 6, shown: true, style: "classic" }),
+        UserCardService: snapService({ x: 3, y: 4, shown: true, size: "2x2" }),
+        WeatherCardService: snapService({ x: 5, y: 6, shown: true, style: "classic", size: "2x2" }),
         VisualizerService: snapService({ x: 7, y: 8, shown: true, vertical: false, bandX: -1, perf: 1 }),
         CalendarCardService: snapService({ x: 9, y: 9, shown: false, size: "full", events: [] }),
         PaletteService: snapService({ x: 1, y: 1, shown: false, size: "full", colors: [] }),

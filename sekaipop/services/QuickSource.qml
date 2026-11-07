@@ -1235,25 +1235,36 @@ Scope {
 
     property var wifiNetworks: []          // [{ssid, signal, secured, connected}]
     property bool wifiScanning: false
-    // True only while a "Scan" button click's own fetch is in flight —
-    // see wifiLiveRefresh below and NetworkDialog.qml's manualScanning
-    // for why this has to be separate from wifiScanning.
+    // True while a rescan "burst" runs: from the moment the dialog opens (or
+    // "Scan" is pressed) until the burst's last read. Separate from
+    // wifiScanning, which also goes true for every quiet background read —
+    // the button would flash "Scanning…" on its own if it followed that.
     property bool wifiManualScanning: false
     property bool networkDialogOpen: false
-    property bool wifiForceRescan: false
+    // Reads left in the current burst.
+    property int wifiBurstLeft: 0
     property string wifiConnectingSsid: ""
     property string wifiConnectSsid: ""
     property string wifiConnectPassword: ""
+    // The saved profile a connect or a disconnect goes through ("" = none: a new network).
+    property string wifiConnectProfile: ""
     property string wifiConnectError: ""
+    // Networks NetworkManager already has a profile for: { ssid: profile name }. A saved network
+    // connects without a password and can be forgotten (its profile deleted).
+    property var wifiSaved: ({})
+    // What the last scan saw, before the saved flag is put on it.
+    property var wifiSeen: []
 
-    // `--rescan no` reads NetworkManager's last-known scan (fast); the
-    // "Scan" button in the dialog instead asks for a fresh one first,
-    // which is what makes newly-appeared networks show up but costs a
-    // couple of real seconds. Same "-e no, SSID takes whatever's left"
-    // trick as the connected-SSID line above, extended to 3 fields
-    // instead of 1: signal/security/in-use never contain a colon, so
-    // they're safe to peel off the right with awk, whatever's left
-    // (however many colons it has) is the SSID.
+    // `--rescan no` reads NetworkManager's last-known scan: it answers at once, so
+    // the dialog has something to show the moment it opens. A real rescan is a
+    // separate job (wifiRescanAction below) that is started in the background at
+    // the same time, and the list is read again every second for a few seconds
+    // while the radio finishes its sweep, so new networks appear as they are
+    // found instead of after one long blocking wait. Same "-e no, SSID takes
+    // whatever's left" trick as the connected-SSID line above, extended to 3
+    // fields instead of 1: signal/security/in-use never contain a colon, so
+    // they're safe to peel off the right with awk, whatever's left (however
+    // many colons it has) is the SSID.
     readonly property string wifiListScript: [
         "nmcli -t -e no -f SSID,SIGNAL,SECURITY,IN-USE device wifi list --rescan no 2>/dev/null | awk -F: '",
         "  { n = NF; inuse = $n; sec = $(n - 1); sig = $(n - 2)",
@@ -1263,17 +1274,46 @@ Scope {
         "    print sig \"|\" sec \"|\" inuse \"|\" ssid }'"
     ].join("\n")
 
-    readonly property string wifiRescanScript:
-        "timeout 5 nmcli device wifi rescan >/dev/null 2>&1\nsleep 2\n" + wifiListScript
+    // Ask NetworkManager for a fresh scan. It may refuse if the last one was very
+    // recent (it rate-limits) — that is fine, the cached list is then fresh anyway.
+    readonly property string wifiRescanScript: "timeout 5 nmcli device wifi rescan >/dev/null 2>&1"
 
-    function scanWifi(forceRescan, manual) {
-        if (manual)
-            wifiManualScanning = true
+    // Plain read of the list (cheap path). If one is already running this one is
+    // skipped: the burst timer reads again a second later, and the live refresh
+    // does too, so nothing is lost.
+    function fetchWifiList() {
         if (wifiListAction.running)
             return
         wifiScanning = true
-        wifiForceRescan = !!forceRescan
         wifiListAction.running = true
+    }
+
+    // Show what NetworkManager already knows right now, ask for a fresh scan, and
+    // keep reading for a few seconds. Pressing "Scan" while a read is in flight
+    // used to be dropped (the second press was the one that worked); now the
+    // rescan is its own process, so the press always goes through.
+    function startWifiRescan() {
+        wifiManualScanning = true
+        wifiBurstLeft = 7
+        if (!wifiRescanAction.running)
+            wifiRescanAction.running = true
+        fetchWifiList()
+        wifiBurstTimer.restart()
+    }
+
+    function stopWifiRescan() {
+        wifiBurstTimer.stop()
+        wifiBurstLeft = 0
+        wifiManualScanning = false
+    }
+
+    // forceRescan=true -> rescan burst (dialog just opened, or "Scan" pressed);
+    // otherwise one quiet read.
+    function scanWifi(forceRescan) {
+        if (forceRescan)
+            startWifiRescan()
+        else
+            fetchWifiList()
     }
 
     function connectWifi(ssid, password) {
@@ -1282,6 +1322,8 @@ Scope {
         wifiConnectingSsid = ssid
         wifiConnectSsid = ssid
         wifiConnectPassword = password
+        // No password given and a profile exists: bring that profile up (it has the password).
+        wifiConnectProfile = password === "" && wifiSaved[ssid] !== undefined ? wifiSaved[ssid] : ""
         wifiConnectAction.running = true
     }
 
@@ -1289,7 +1331,73 @@ Scope {
         actionGen++
         wifiConnectError = ""
         wifiConnectSsid = ssid
+        // the profile is not always named after its SSID
+        wifiConnectProfile = wifiSaved[ssid] !== undefined ? wifiSaved[ssid] : ssid
         wifiDisconnectAction.running = true
+    }
+
+    // Delete the saved profile of a network (it also drops the connection if it is the active one).
+    function forgetWifi(ssid) {
+        if (wifiSaved[ssid] === undefined || wifiForgetAction.running)
+            return
+        actionGen++
+        wifiConnectError = ""
+        wifiConnectSsid = ssid
+        wifiConnectProfile = wifiSaved[ssid]
+        wifiForgetAction.running = true
+    }
+
+    // The saved flag goes on the scan's list; redone when either the scan or the saved list
+    // changes, whichever arrives second.
+    function annotateWifi() {
+        const next = wifiSeen.map(n => ({
+            ssid: n.ssid,
+            signal: n.signal,
+            secured: n.secured,
+            connected: n.connected,
+            saved: wifiSaved[n.ssid] !== undefined
+        }))
+        // The dialog shows the signal as 3 bars, so a few points of change is not a change: a
+        // new list resets the dialog's list (scroll position, an opened row), and during a
+        // scan the list is read every second.
+        const key = list => JSON.stringify(list.map(n => [n.ssid, n.signal >= 33, n.signal >= 66, n.secured, n.connected, n.saved]))
+        if (key(next) !== key(wifiNetworks))
+            wifiNetworks = next
+    }
+
+    function fetchWifiSaved() {
+        if (!wifiSavedAction.running)
+            wifiSavedAction.running = true
+    }
+
+    // `saved|<profile name>|<ssid>` for every Wi-Fi profile. The SSID is read from the profile
+    // itself because the profile's name is only the SSID when it was made through nmcli or a
+    // GUI; a '|' is turned into '?' the way the scan list does so the two still match.
+    readonly property string wifiSavedScript: [
+        "nmcli -t -e no -f NAME,TYPE connection show 2>/dev/null | awk -F: '",
+        "  { n = NF; if ($n != \"802-11-wireless\") next",
+        "    name = $1; for (i = 2; i <= n - 1; i++) name = name \":\" $i",
+        "    print name }' | while IFS= read -r c; do",
+        "  case \"$c\" in *\"|\"*) continue ;; esac",
+        "  s=$(timeout 2 nmcli -g 802-11-wireless.ssid connection show id \"$c\" 2>/dev/null | head -n1)",
+        "  [ -n \"$s\" ] || s=\"$c\"",
+        "  s=$(printf '%s' \"$s\" | tr '|' '?')",
+        "  printf 'saved|%s|%s\\n' \"$c\" \"$s\"",
+        "done"
+    ].join("\n")
+
+    function applyWifiSaved(text) {
+        const map = {}
+        for (const line of text.split("\n")) {
+            const parts = line.split("|")
+            if (parts.length < 3 || parts[0] !== "saved")
+                continue
+            const ssid = parts.slice(2).join("|")
+            if (ssid !== "" && map[ssid] === undefined)
+                map[ssid] = parts[1]
+        }
+        wifiSaved = map
+        annotateWifi()
     }
 
     function applyWifiList(text) {
@@ -1312,50 +1420,100 @@ Scope {
                 connected: parts[2] === "*"
             })
         }
-        // Connected first, then strongest signal. nmcli lists every
-        // BSSID it can see separately — the same SSID from two APs —
-        // so only the first (strongest, since the list arrives sorted
-        // that way already) copy of each name is kept.
-        const seen = new Set()
-        wifiNetworks = list.filter(n => {
-            if (seen.has(n.ssid))
-                return false
-            seen.add(n.ssid)
-            return true
+        // nmcli lists every BSSID it can see separately — the same SSID from two
+        // APs — so one row is kept per name: the connected one, else the strongest.
+        const best = new Map()
+        for (const n of list) {
+            const e = best.get(n.ssid)
+            if (e === undefined || (n.connected && !e.connected)
+                    || (n.connected === e.connected && n.signal > e.signal))
+                best.set(n.ssid, n)
+        }
+        // Connected first, then strongest signal. The list is read again every
+        // second during a rescan, so the signal is compared in steps of 10 and
+        // ties keep the place the row already had — rows don't jump around under
+        // a finger because a signal moved by one or two points.
+        const prev = {}
+        wifiSeen.forEach((n, i) => { prev[n.ssid] = i })
+        const rank = n => (n.connected ? 1000 : 0) + Math.round(n.signal / 10) * 10
+        wifiSeen = Array.from(best.values()).sort((a, b) => {
+            const d = rank(b) - rank(a)
+            if (d !== 0)
+                return d
+            const pa = prev[a.ssid] !== undefined ? prev[a.ssid] : 1e6
+            const pb = prev[b.ssid] !== undefined ? prev[b.ssid] : 1e6
+            if (pa !== pb)
+                return pa - pb
+            return a.ssid < b.ssid ? -1 : (a.ssid > b.ssid ? 1 : 0)
         })
+        annotateWifi()
+    }
+
+    Process {
+        id: wifiSavedAction
+        command: ["sh", "-c", root.wifiSavedScript]
+        stdout: StdioCollector {
+            onStreamFinished: root.applyWifiSaved(text)
+        }
+    }
+
+    // Which networks are saved is read when the dialog opens, not on every refresh tick.
+    // Closing the dialog ends any rescan burst that is still running.
+    onNetworkDialogOpenChanged: {
+        if (networkDialogOpen)
+            fetchWifiSaved()
+        else
+            stopWifiRescan()
     }
 
     Process {
         id: wifiListAction
-        command: ["sh", "-c", root.wifiForceRescan ? root.wifiRescanScript : root.wifiListScript]
+        command: ["sh", "-c", root.wifiListScript]
         stdout: StdioCollector {
             onStreamFinished: root.applyWifiList(text)
         }
-        onExited: {
-            root.wifiScanning = false
-            root.wifiManualScanning = false
+        onExited: root.wifiScanning = false
+    }
+
+    // The real rescan. It runs on its own, so it never blocks the reads below.
+    Process {
+        id: wifiRescanAction
+        command: ["sh", "-c", root.wifiRescanScript]
+    }
+
+    // While a rescan burst runs: read the list once a second (new networks show up
+    // as the radio finds them), then stop. The 7th read ends the burst.
+    Timer {
+        id: wifiBurstTimer
+        interval: 1000
+        repeat: true
+        onTriggered: {
+            root.fetchWifiList()
+            root.wifiBurstLeft--
+            if (root.wifiBurstLeft <= 0)
+                root.stopWifiRescan()
         }
     }
 
-    // Keeps the network list live instead of frozen at whatever nmcli
-    // returned the moment the dialog opened — same idea as
-    // audioMixerRefresh further down, using the cheap `--rescan no`
-    // path (forceRescan left falsy) rather than a real rescan on every
-    // tick. The "Scan" button's own forced rescan is unaffected —
-    // manual=true there marks it separately (see wifiManualScanning).
+    // Keeps the network list live after the burst is over instead of frozen at
+    // whatever nmcli returned last — same idea as audioMixerRefresh further down,
+    // using the cheap `--rescan no` path rather than a real rescan on every tick.
+    // Paused during a burst, which already reads every second.
     Timer {
         id: wifiLiveRefresh
         interval: 5000
         repeat: true
-        running: root.active && root.networkDialogOpen
+        running: root.active && root.networkDialogOpen && !root.wifiManualScanning
         onTriggered: root.scanWifi(false)
     }
 
     Process {
         id: wifiConnectAction
-        command: root.wifiConnectPassword !== ""
-            ? ["nmcli", "device", "wifi", "connect", root.wifiConnectSsid, "password", root.wifiConnectPassword]
-            : ["nmcli", "device", "wifi", "connect", root.wifiConnectSsid]
+        command: root.wifiConnectProfile !== ""
+            ? ["nmcli", "connection", "up", "id", root.wifiConnectProfile]
+            : (root.wifiConnectPassword !== ""
+                ? ["nmcli", "device", "wifi", "connect", root.wifiConnectSsid, "password", root.wifiConnectPassword]
+                : ["nmcli", "device", "wifi", "connect", root.wifiConnectSsid])
         stderr: StdioCollector {
             onStreamFinished: {
                 if (text.trim() !== "")
@@ -1364,55 +1522,122 @@ Scope {
         }
         onExited: {
             root.wifiConnectPassword = ""
+            root.wifiConnectProfile = ""
             root.wifiConnectingSsid = ""
+            root.refreshSoon()
+            root.scanWifi(false)
+            // a new network that just connected now has a profile
+            root.fetchWifiSaved()
+        }
+    }
+
+    Process {
+        id: wifiDisconnectAction
+        // The saved profile's own name (it is the SSID unless the profile was renamed by hand).
+        command: ["nmcli", "connection", "down", "id", root.wifiConnectProfile !== "" ? root.wifiConnectProfile : root.wifiConnectSsid]
+        onExited: {
+            root.wifiConnectProfile = ""
             root.refreshSoon()
             root.scanWifi(false)
         }
     }
 
     Process {
-        id: wifiDisconnectAction
-        // Assumes the connection profile is named after its SSID, which
-        // is nmcli's own default for anything you connected through it
-        // or a GUI — a hand-renamed profile won't disconnect from here.
-        command: ["nmcli", "connection", "down", "id", root.wifiConnectSsid]
+        id: wifiForgetAction
+        command: ["nmcli", "connection", "delete", "id", root.wifiConnectProfile]
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text.trim() !== "")
+                    root.wifiConnectError = text.trim()
+            }
+        }
         onExited: {
+            root.wifiConnectProfile = ""
             root.refreshSoon()
+            root.fetchWifiSaved()
             root.scanWifi(false)
         }
     }
 
-    property var bluetoothDevices: []      // [{address, name, connected, battery}]
+    property var bluetoothDevices: []      // [{address, name, connected, paired, battery}]
     property bool bluetoothScanning: false
+    // True while a discovery burst runs: from the moment the dialog opens (or
+    // "Scan" is pressed) until the burst's last read. Separate from
+    // bluetoothScanning, which also goes true for every quiet background read.
     property bool bluetoothManualScanning: false
     property bool bluetoothDialogOpen: false
+    // Reads left in the current burst.
+    property int bluetoothBurstLeft: 0
     property string bluetoothConnectingAddress: ""
     property string bluetoothConnectAddress: ""
     property string bluetoothConnectError: ""
 
-    // Paired devices, cross-referenced against the currently-connected
-    // list so each row knows its own state without a slow per-device
-    // `bluetoothctl info` round trip. The one exception is a connected
-    // device: it gets a single `bluetoothctl info` for its battery level
-    // (BlueZ's "Battery Percentage"; empty when the device doesn't report
-    // one). Each line is `mac|connected|battery|name`. No discovery here — pairing a new
-    // device needs bluetoothctl's own agent for the PIN/confirm prompt,
-    // which doesn't fit this dialog; "Refresh" just re-runs this.
+    // Every device BlueZ knows: the paired ones first, then the ones discovery has
+    // found nearby. Each line is `mac|connected|battery|paired|name`. A connected
+    // device gets a single `bluetoothctl info` for its battery level (BlueZ's
+    // "Battery Percentage"; empty when the device doesn't report one). A nearby
+    // device that was never paired and has no name (BLE beacons show their own
+    // address as the name) is left out, or the list would fill up with noise.
     readonly property string bluetoothListScript: [
         "p=$(timeout 3 bluetoothctl devices Paired 2>/dev/null)",
+        "a=$(timeout 3 bluetoothctl devices 2>/dev/null)",
         "c=$(timeout 3 bluetoothctl devices Connected 2>/dev/null)",
-        "printf '%s\\n' \"$p\" | while IFS= read -r line; do",
-        "  [ -z \"$line\" ] && continue",
+        "printf '%s\\n%s\\n' \"$p\" \"$a\" | awk 'NF && !seen[$2]++' | while IFS= read -r line; do",
         "  mac=$(printf '%s' \"$line\" | awk '{print $2}')",
         "  name=$(printf '%s' \"$line\" | cut -d' ' -f3-)",
+        "  pair=0",
+        "  printf '%s\\n' \"$p\" | grep -q \"$mac\" && pair=1",
+        "  if [ \"$pair\" = 0 ]; then",
+        "    [ -n \"$name\" ] || continue",
+        "    [ \"$name\" = \"$(printf '%s' \"$mac\" | tr ':' '-')\" ] && continue",
+        "  fi",
         "  conn=0",
         "  printf '%s\\n' \"$c\" | grep -q \"$mac\" && conn=1",
         "  batt=",
         "  if [ \"$conn\" = 1 ]; then",
         "    batt=$(timeout 2 bluetoothctl info \"$mac\" </dev/null 2>/dev/null | sed -n 's/.*Battery Percentage:.*(\\([0-9]*\\)).*/\\1/p' | head -n1)",
         "  fi",
-        "  printf '%s|%s|%s|%s\\n' \"$mac\" \"$conn\" \"$batt\" \"$name\"",
+        "  printf '%s|%s|%s|%s|%s\\n' \"$mac\" \"$conn\" \"$batt\" \"$pair\" \"$name\"",
         "done"
+    ].join("\n")
+
+    // Discovery: bluetoothctl looks for devices for 9 seconds and then quits (the
+    // discovery stops when it quits). `exec` so that stopping this process also
+    // stops bluetoothctl. A burst of reads runs next to it (bluetoothBurstTimer).
+    readonly property string bluetoothDiscoverScript: "exec timeout 15 bluetoothctl --timeout 9 scan on >/dev/null 2>&1"
+
+    // Pair, trust and connect a nearby device; the address comes in as $1. It
+    // registers a "no input, no output" agent, which is what headphones, speakers
+    // and the like need ("just works" pairing). A device that asks for a PIN or a
+    // code (a keyboard, say) can't be paired this way: it ends with an error that
+    // points to the Advanced button. Success is checked on the device itself.
+    readonly property string bluetoothPairScript: [
+        "mac=\"$1\"",
+        "case \"$mac\" in ??:??:??:??:??:??) ;; *) exit 2 ;; esac",
+        "{",
+        "  printf 'agent NoInputNoOutput\\ndefault-agent\\npair %s\\n' \"$mac\"",
+        "  i=0",
+        "  while [ \"$i\" -lt 25 ]; do",
+        "    sleep 1",
+        "    bluetoothctl info \"$mac\" 2>/dev/null | grep -q 'Paired: yes' && break",
+        "    i=$((i + 1))",
+        "  done",
+        "  printf 'trust %s\\nconnect %s\\n' \"$mac\" \"$mac\"",
+        "  sleep 5",
+        "} | timeout 45 bluetoothctl >/dev/null 2>&1",
+        "bluetoothctl info \"$mac\" 2>/dev/null | grep -q 'Paired: yes' && exit 0",
+        "echo \"Could not pair. A device that asks for a PIN needs the Advanced button.\" >&2",
+        "exit 1"
+    ].join("\n")
+
+    // Forget (remove) a paired device; the address comes in as $1. BlueZ drops the
+    // pairing and the device from its list, and disconnects it if it was connected.
+    readonly property string bluetoothForgetScript: [
+        "case \"$1\" in ??:??:??:??:??:??) ;; *) exit 2 ;; esac",
+        "out=$(timeout 10 bluetoothctl remove \"$1\" 2>&1)",
+        "case \"$out\" in *\"has been removed\"*) exit 0 ;; esac",
+        "echo \"Could not forget the device.\" >&2",
+        "exit 1"
     ].join("\n")
 
     // The popups' "Advanced" button: the full Wi-Fi / Bluetooth settings app
@@ -1425,21 +1650,69 @@ Scope {
         Quickshell.execDetached(["sh", Directories.script("system/open-settings-app.sh"), "bluetooth"])
     }
 
-    function scanBluetooth(manual) {
-        if (manual)
-            bluetoothManualScanning = true
+    // One quiet read of the list (cheap path). If one is already running this one is
+    // skipped: the burst timer and the live refresh read again soon after.
+    function fetchBluetoothList() {
         if (bluetoothListAction.running)
             return
         bluetoothScanning = true
         bluetoothListAction.running = true
     }
 
+    // Show what BlueZ already knows right now, start looking for devices, and keep
+    // reading for a few seconds so devices show up as they are found.
+    function startBluetoothScan() {
+        bluetoothManualScanning = true
+        bluetoothBurstLeft = 9
+        if (!bluetoothDiscoverAction.running)
+            bluetoothDiscoverAction.running = true
+        fetchBluetoothList()
+        bluetoothBurstTimer.restart()
+    }
+
+    function stopBluetoothScan() {
+        bluetoothBurstTimer.stop()
+        bluetoothBurstLeft = 0
+        bluetoothManualScanning = false
+        // looking for devices slows pairing down and can make a playing headset stutter
+        if (bluetoothDiscoverAction.running)
+            bluetoothDiscoverAction.running = false
+    }
+
+    // discover=true -> look for devices (dialog just opened, or "Scan" pressed);
+    // otherwise one quiet read.
+    function scanBluetooth(discover) {
+        if (discover)
+            startBluetoothScan()
+        else
+            fetchBluetoothList()
+    }
+
+    // A device that is not paired yet is paired first (see bluetoothPairScript);
+    // a paired one is just connected.
     function connectBluetoothDevice(address) {
         actionGen++
         bluetoothConnectError = ""
         bluetoothConnectingAddress = address
         bluetoothConnectAddress = address
-        bluetoothConnectAction.running = true
+        const d = bluetoothDevices.find(x => x.address === address)
+        if (d !== undefined && d.paired === false) {
+            stopBluetoothScan()
+            bluetoothPairAction.running = true
+        } else {
+            bluetoothConnectAction.running = true
+        }
+    }
+
+    // Forget a paired device (BlueZ "remove": the pairing is deleted, a connected device is dropped).
+    function forgetBluetoothDevice(address) {
+        const d = bluetoothDevices.find(x => x.address === address)
+        if (d === undefined || d.paired !== true || bluetoothForgetAction.running)
+            return
+        actionGen++
+        bluetoothConnectError = ""
+        bluetoothConnectAddress = address
+        bluetoothForgetAction.running = true
     }
 
     function disconnectBluetoothDevice(address) {
@@ -1456,23 +1729,41 @@ Scope {
             if (line.trim() === "")
                 continue
             const parts = line.split("|")
-            if (parts.length < 4)
+            if (parts.length < 5)
                 continue
             const address = parts[0]
             if (address === "")
                 continue
-            const name = parts.slice(3).join("|")
+            const name = parts.slice(4).join("|")
             // -1 = the device doesn't report a battery level.
             const battery = parseInt(parts[2], 10)
             list.push({
                 address: address,
                 name: name !== "" ? name : address,
                 connected: parts[1] === "1",
+                paired: parts[3] === "1",
                 battery: isNaN(battery) ? -1 : Math.max(0, Math.min(100, battery))
             })
         }
-        list.sort((a, b) => (b.connected - a.connected))
-        bluetoothDevices = list
+        // Connected first, then paired, then the ones found nearby. The list is read
+        // again every second while looking for devices, so a row keeps the place it
+        // already had and a new device goes to the end of its group (by name).
+        const prev = {}
+        bluetoothDevices.forEach((d, i) => { prev[d.address] = i })
+        const rank = d => d.connected ? 2 : (d.paired ? 1 : 0)
+        list.sort((a, b) => {
+            const r = rank(b) - rank(a)
+            if (r !== 0)
+                return r
+            const pa = prev[a.address] !== undefined ? prev[a.address] : 1e6
+            const pb = prev[b.address] !== undefined ? prev[b.address] : 1e6
+            if (pa !== pb)
+                return pa - pb
+            return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : (a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0)
+        })
+        // same reason as annotateWifi: no new list when nothing on screen changed
+        if (JSON.stringify(list) !== JSON.stringify(bluetoothDevices))
+            bluetoothDevices = list
     }
 
     Process {
@@ -1481,22 +1772,74 @@ Scope {
         stdout: StdioCollector {
             onStreamFinished: root.applyBluetoothList(text)
         }
-        onExited: {
-            root.bluetoothScanning = false
-            root.bluetoothManualScanning = false
+        onExited: root.bluetoothScanning = false
+    }
+
+    // The discovery itself. It runs on its own, so it never blocks the reads.
+    Process {
+        id: bluetoothDiscoverAction
+        command: ["sh", "-c", root.bluetoothDiscoverScript]
+    }
+
+    // While a discovery burst runs: read the list once a second (devices show up as
+    // they are found), then stop. The 9th read ends the burst.
+    Timer {
+        id: bluetoothBurstTimer
+        interval: 1000
+        repeat: true
+        onTriggered: {
+            root.fetchBluetoothList()
+            root.bluetoothBurstLeft--
+            if (root.bluetoothBurstLeft <= 0)
+                root.stopBluetoothScan()
         }
     }
 
+    // Closing the dialog ends the burst and the discovery.
+    onBluetoothDialogOpenChanged: if (!bluetoothDialogOpen) stopBluetoothScan()
+
     // Same live-list idea as wifiLiveRefresh: bluetoothctl devices is
     // cheap (no discovery), so this just re-reads paired/connected
-    // state every few seconds while the dialog's open instead of only
-    // once when it opens.
+    // state every few seconds while the dialog's open. Paused during a
+    // burst, which already reads every second.
     Timer {
         id: bluetoothLiveRefresh
         interval: 3000
         repeat: true
-        running: root.active && root.bluetoothDialogOpen
+        running: root.active && root.bluetoothDialogOpen && !root.bluetoothManualScanning
         onTriggered: root.scanBluetooth()
+    }
+
+    // Pairs a nearby device that was tapped (see bluetoothPairScript).
+    Process {
+        id: bluetoothPairAction
+        command: ["sh", "-c", root.bluetoothPairScript, "sh", root.bluetoothConnectAddress]
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text.trim() !== "")
+                    root.bluetoothConnectError = text.trim()
+            }
+        }
+        onExited: {
+            root.bluetoothConnectingAddress = ""
+            root.refreshSoon()
+            root.scanBluetooth()
+        }
+    }
+
+    Process {
+        id: bluetoothForgetAction
+        command: ["sh", "-c", root.bluetoothForgetScript, "sh", root.bluetoothConnectAddress]
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text.trim() !== "")
+                    root.bluetoothConnectError = text.trim()
+            }
+        }
+        onExited: {
+            root.refreshSoon()
+            root.scanBluetooth()
+        }
     }
 
     Process {

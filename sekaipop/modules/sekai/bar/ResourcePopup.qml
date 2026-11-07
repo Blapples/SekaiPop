@@ -2,6 +2,7 @@ import QtQuick
 import qs.services
 import qs.modules.common
 import qs.modules.common.widgets
+import "../../common/functions/SensorsMath.js" as SM
 
 // The card that drops down from ResourceIndicator.qml, redesigned to sit with
 // the other bar popups (Battery, Weather, Calendar): the shared SekaiPopup
@@ -21,6 +22,9 @@ import qs.modules.common.widgets
 //                 own glyph turns red at.
 //   The keys      the memory in use, "6.1 of 16.0 GB", on two keycaps like the
 //                 battery's time.
+//   The sensors   under those, when this machine has them: the CPU and GPU temperatures and the
+//                 disks' fill, one thin bar each (StatBar.qml), from SensorsService.qml. A row
+//                 the machine can't read is simply not there.
 SekaiPopup {
     id: root
 
@@ -257,6 +261,51 @@ SekaiPopup {
                         font.pixelSize: 10
                     }
                 }
+            }
+        }
+
+        // ===== the sensors =====
+        SectionTab {
+            visible: SensorsService.cpuTemp !== null || SensorsService.gpuTemp !== null
+            text: "Temperatures"
+        }
+
+        StatBar {
+            visible: SensorsService.cpuTemp !== null
+            width: root.innerW
+            label: "CPU"
+            valueText: SM.tempText(SensorsService.cpuTemp) + " · " + SM.tempWord(SensorsService.cpuTemp)
+            frac: SM.tempFrac(SensorsService.cpuTemp)
+            hot: SM.tempHot(SensorsService.cpuTemp)
+            wave: root.fillWave
+        }
+
+        StatBar {
+            visible: SensorsService.gpuTemp !== null
+            width: root.innerW
+            label: "GPU"
+            valueText: SM.tempText(SensorsService.gpuTemp) + " · " + SM.tempWord(SensorsService.gpuTemp)
+            frac: SM.tempFrac(SensorsService.gpuTemp)
+            hot: SM.tempHot(SensorsService.gpuTemp)
+            wave: root.fillWave
+        }
+
+        SectionTab {
+            visible: SensorsService.disks.length > 0
+            text: "Disks"
+        }
+
+        Repeater {
+            model: SensorsService.disks
+
+            StatBar {
+                required property var modelData
+                width: root.innerW
+                label: modelData.name
+                valueText: SM.diskText(modelData)
+                frac: SM.diskFrac(modelData)
+                hot: SM.diskFull(modelData)
+                wave: root.fillWave
             }
         }
     }

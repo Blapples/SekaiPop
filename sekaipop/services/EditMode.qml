@@ -189,7 +189,9 @@ Singleton {
         // others, though it has no tile of its own.
         { id: "image", title: "Image", icon: "add_photo_alternate" },
         { id: "palettecard", title: "Palette", icon: "palette" },
-        { id: "lyrics", title: "Lyrics", icon: "lyrics" }
+        { id: "lyrics", title: "Lyrics", icon: "lyrics" },
+        { id: "watertank", title: "Water tank", icon: "water_drop" },
+        { id: "downloader", title: "Downloader", icon: "download" }
     ]
 
     // What the shelf shows: the widgets above, then the desktop widget plugins that loaded
@@ -358,6 +360,10 @@ Singleton {
             return NotesService.active
         if (id === "visualizer")
             return VisualizerService.shown
+        if (id === "watertank")
+            return WaterTankService.shown
+        if (id === "downloader")
+            return DownloaderService.shown
         if (id === "image")
             return ImageService.shown
         if (id.indexOf("image:") === 0)
@@ -390,6 +396,10 @@ Singleton {
             return root.homeScreen(LyricsService.screenName) === root.screenName
         if (id === "visualizer")
             return root.homeScreen(VisualizerService.screenName) === root.screenName
+        if (id === "watertank")
+            return root.homeScreen(WaterTankService.screenName) === root.screenName
+        if (id === "downloader")
+            return root.homeScreen(DownloaderService.screenName) === root.screenName
         // The shelf's Image tile is a button, not a widget: it is never "placed".
         if (id === "image")
             return false
@@ -468,6 +478,20 @@ Singleton {
                 VisualizerService.screenName = here
             }
             VisualizerService.setShown(true)
+        } else if (id === "watertank") {
+            if (here !== "" && root.homeScreen(WaterTankService.screenName) !== here) {
+                WaterTankService.posX = -1
+                WaterTankService.posY = -1
+                WaterTankService.screenName = here
+            }
+            WaterTankService.setShown(true)
+        } else if (id === "downloader") {
+            if (here !== "" && root.homeScreen(DownloaderService.screenName) !== here) {
+                DownloaderService.posX = -1
+                DownloaderService.posY = -1
+                DownloaderService.screenName = here
+            }
+            DownloaderService.setShown(true)
         } else if (id === "todo") {
             // One card, on one monitor: adding it on this monitor brings it here (and keeps the choice).
             if (here !== "" && DesktopMonitors.homeFor("todo") !== here) {
@@ -525,6 +549,10 @@ Singleton {
             NotesService.setShown(false)
         else if (id === "visualizer")
             VisualizerService.setShown(false)
+        else if (id === "watertank")
+            WaterTankService.setShown(false)
+        else if (id === "downloader")
+            DownloaderService.setShown(false)
         else if (id.indexOf("image:") === 0)
             ImageService.remove(id.slice(6))
         else if (PluginService.isPluginId(id)) {
@@ -602,6 +630,10 @@ Singleton {
             TodoService.setPosition(at.x, at.y, ui)
         } else if (id === "visualizer") {
             VisualizerService.setPosition(at.x, at.y, here, ui)
+        } else if (id === "watertank") {
+            WaterTankService.setPosition(at.x, at.y, here, ui)
+        } else if (id === "downloader") {
+            DownloaderService.setPosition(at.x, at.y, here, ui)
         } else if (PluginService.isPluginId(id)) {
             const st = PluginService.stateFor(id)
             if (st)

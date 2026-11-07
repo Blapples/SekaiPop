@@ -15,7 +15,8 @@ import qs.modules.common.widgets
 //   }
 //
 // The weather card wears the same key for its style (Classic / Minimal), with `icon` and `label`
-// set; see WeatherCardWidget.qml.
+// set; see WeatherCardWidget.qml. A card with three sizes (FULL / 2 x 2 / 1 x 1) sets `label` too
+// and passes `small: <it is the 1 x 1 now>`, so the arrow points the way the next press goes.
 //
 // Put it inside the card (the Item that is dragged around). `z: 20` keeps it above
 // EditChrome (z: 15) and the card's content, so it wins its own clicks; while it is hidden
@@ -34,6 +35,9 @@ Item {
     // and the chip flashes whenever it changes. Both empty = the size key, as it always was.
     property string icon: ""
     property string label: ""
+    // Which place on the corner it takes: 0 is the top one; a card with two keys (the weather
+    // card: style and size) puts the second at 1, 40 px lower.
+    property int row: 0
 
     signal toggled()
 
@@ -41,7 +45,7 @@ Item {
     width: 30
     height: 34
     x: root.parent ? root.parent.width - root.width + 10 : 0
-    y: -12
+    y: -12 + root.row * 40
     visible: root.opacity > 0.01
     opacity: root.shown ? 1 : 0
     scale: root.shown ? 1 : 0.6

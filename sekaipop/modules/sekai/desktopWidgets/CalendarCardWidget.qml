@@ -617,8 +617,11 @@ PanelWindow {
                 // The 2 x 2 size (CalendarCardService.size) is the footprint the clock, user card
                 // and weather card share: 286 x 238 of content, 320 x 276 with the housing.
                 readonly property bool small: CalendarCardService.small
-                readonly property int contentW: card.small ? 286 : 312
-                readonly property int contentH: card.small ? 238 : col.implicitHeight
+                // The 1 x 1 size is a quarter of the 2 x 2: 120 x 94 of content, 154 x 132 with
+                // the housing. It shows only today's day and date (CalendarTile.qml).
+                readonly property bool tiny: CalendarCardService.tiny
+                readonly property int contentW: card.tiny ? 120 : (card.small ? 286 : 312)
+                readonly property int contentH: card.tiny ? 94 : (card.small ? 238 : col.implicitHeight)
                 readonly property int inset: mt.borderWidth + mt.outerRingWidth + 10
 
                 width: card.contentW + card.inset * 2
@@ -642,7 +645,9 @@ PanelWindow {
 
                 // The housing: the same navy outline / pale ring / surface fill / hard
                 // shadow as the bar, the dock, the To-Do card and the clock.
+                // Not drawn at 1 x 1: that size is one bare object on the wallpaper (TinyFoot.qml).
                 Pill {
+                    visible: !card.tiny
                     anchors.fill: parent
                     cornerRadius: mt.radiusOuter
                     ringWidth: mt.borderWidth + mt.outerRingWidth
@@ -674,6 +679,8 @@ PanelWindow {
                     z: 1
                     anchors.fill: parent
                     acceptedButtons: Qt.LeftButton
+                    // The 1 x 1 keycap lights up when pointed at.
+                    hoverEnabled: card.tiny
                     cursorShape: EditMode.desktopDragAllowed || chrome.selected
                         ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.ArrowCursor
 
@@ -696,10 +703,11 @@ PanelWindow {
                     onPressed: card.forceActiveFocus()
                 }
 
-                // Edit Desktop: flip between FULL and 2 x 2 (only while the card is selected).
+                // Edit Desktop: step through FULL, 2 x 2 and 1 x 1 (only while the card is selected).
                 SizeKey {
                     shown: chrome.selected
-                    small: card.small
+                    small: card.tiny
+                    label: "SIZE  " + (card.tiny ? "1 x 1" : (card.small ? "2 x 2" : "FULL"))
                     onToggled: CalendarCardService.toggleSize()
                 }
 
@@ -707,7 +715,7 @@ PanelWindow {
                 Item {
                     id: content
                     z: 2
-                    visible: !card.small
+                    visible: !card.small && !card.tiny
                     x: card.inset
                     y: card.inset
                     width: card.contentW
@@ -1466,6 +1474,30 @@ PanelWindow {
                                 }
                             }
                         }
+                    }
+                }
+
+                // ===== the 1 x 1 face =====
+                // Today's day and date printed on a keycap (CalendarTile.qml). Nothing on it is
+                // clickable: it is the card's drag area underneath, so it moves like any other.
+                Loader {
+                    id: tinyLoader
+                    z: 2
+                    x: card.inset
+                    y: card.inset
+                    active: card.tiny
+                    sourceComponent: tinyFace
+                }
+
+                Component {
+                    id: tinyFace
+
+                    CalendarTile {
+                        width: card.contentW
+                        height: card.contentH
+                        today: win.today
+                        hover: dragArea.containsMouse
+                        pressed: dragArea.pressed
                     }
                 }
 

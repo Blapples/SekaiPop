@@ -170,7 +170,33 @@ PanelWindow {
     // window; the bar's pills never reach the last 4 px of the strip.)
     mask: Region {
         item: barMask
-        regions: [ Region { item: hotCut; intersection: Intersection.Subtract } ]
+        regions: [
+            Region { item: hotCut; intersection: Intersection.Subtract },
+            Region { item: cornerCutLeft; intersection: Intersection.Subtract },
+            Region { item: cornerCutRight; intersection: Intersection.Subtract }
+        ]
+    }
+    // The scroll corners (CornerScroll.qml, services/CornerScrollService.qml) are strips along the
+    // top edge at each end of the screen. A bar on the top edge lies under both, a bar on the
+    // left edge under the left one, a bar on the right edge under the right one: that spot is
+    // cut out of the bar's input region so the wheel reaches the corner window.
+    Item {
+        id: cornerCutLeft
+        readonly property bool on: CornerScrollService.enabled && !win.passive
+            && (win.barPosition === "top" || win.barPosition === "left")
+        x: 0
+        y: 0
+        width: on ? Math.min(win.width, CornerScrollService.zoneWidth) : 0
+        height: on ? CornerScrollService.zoneHeight : 0
+    }
+    Item {
+        id: cornerCutRight
+        readonly property bool on: CornerScrollService.enabled && !win.passive
+            && (win.barPosition === "top" || win.barPosition === "right")
+        width: on ? Math.min(win.width, CornerScrollService.zoneWidth) : 0
+        height: on ? CornerScrollService.zoneHeight : 0
+        x: win.width - width
+        y: 0
     }
     Item {
         id: hotCut
@@ -200,7 +226,7 @@ PanelWindow {
     property bool hoverWin: false
     readonly property bool popupOpen: win.trayOpen || trayPopups.showing || win.batteryPopupOpen
         || win.utilPopupOpen || win.resourcePopupOpen || win.calendarPopupOpen || win.weatherPopupOpen
-        || win.mediaPopupOpen || win.eqPopupOpen || win.discordPopupOpen || win.pluginPopup !== ""
+        || win.mediaPopupOpen || win.eqPopupOpen || win.discordPopupOpen || win.screenTimePopupOpen || win.timerPopupOpen || win.netSpeedPopupOpen || win.pluginPopup !== ""
     readonly property bool revealed: !win.autoHide || win.editing || win.hoverWin || win.popupOpen
         || hideGrace.running || peekHold.running
     // How deep the line on the edge is, real pixels.
@@ -253,6 +279,9 @@ PanelWindow {
                 win.batteryPopupOpen = false
                 win.utilPopupOpen = false
                 win.resourcePopupOpen = false
+                win.screenTimePopupOpen = false
+                win.timerPopupOpen = false
+                win.netSpeedPopupOpen = false
                 win.calendarPopupOpen = false
                 win.weatherPopupOpen = false
                 win.mediaPopupOpen = false
@@ -272,6 +301,9 @@ PanelWindow {
                 win.batteryPopupOpen = false
                 win.utilPopupOpen = false
                 win.resourcePopupOpen = false
+                win.screenTimePopupOpen = false
+                win.timerPopupOpen = false
+                win.netSpeedPopupOpen = false
                 win.calendarPopupOpen = false
                 win.weatherPopupOpen = false
                 win.mediaPopupOpen = false
@@ -393,6 +425,9 @@ PanelWindow {
     property bool mediaPopupOpen: false
     property bool eqPopupOpen: false
     property bool discordPopupOpen: false
+    property bool screenTimePopupOpen: false
+    property bool timerPopupOpen: false
+    property bool netSpeedPopupOpen: false
     // The utility keys' flyout (UtilPopup.qml), for a short standing bar.
     property bool utilPopupOpen: false
     // The plugin whose popup is open, as "plugin:<id>" ("" = none): one at a time, like the rest.
@@ -415,6 +450,9 @@ PanelWindow {
         batteryPopupOpen = false
         utilPopupOpen = false
         resourcePopupOpen = false
+        screenTimePopupOpen = false
+        timerPopupOpen = false
+        netSpeedPopupOpen = false
         calendarPopupOpen = false
         weatherPopupOpen = false
         pluginPopup = opening ? key : ""
@@ -449,6 +487,9 @@ PanelWindow {
         batteryPopupOpen = false
         utilPopupOpen = false
         resourcePopupOpen = false
+        screenTimePopupOpen = false
+        timerPopupOpen = false
+        netSpeedPopupOpen = false
         calendarPopupOpen = false
         weatherPopupOpen = false
         discordPopupOpen = false
@@ -462,6 +503,9 @@ PanelWindow {
         batteryPopupOpen = false
         utilPopupOpen = false
         resourcePopupOpen = false
+        screenTimePopupOpen = false
+        timerPopupOpen = false
+        netSpeedPopupOpen = false
         calendarPopupOpen = false
         weatherPopupOpen = false
         discordPopupOpen = false
@@ -498,6 +542,9 @@ PanelWindow {
         batteryPopupOpen = false
         utilPopupOpen = false
         resourcePopupOpen = false
+        screenTimePopupOpen = false
+        timerPopupOpen = false
+        netSpeedPopupOpen = false
         calendarPopupOpen = false
         weatherPopupOpen = false
         pluginPopup = ""
@@ -518,6 +565,9 @@ PanelWindow {
         mediaPopupOpen = false
         discordPopupOpen = false
         resourcePopupOpen = false
+        screenTimePopupOpen = false
+        timerPopupOpen = false
+        netSpeedPopupOpen = false
         calendarPopupOpen = false
         weatherPopupOpen = false
         utilPopupOpen = false
@@ -533,7 +583,52 @@ PanelWindow {
         calendarPopupOpen = false
         weatherPopupOpen = false
         pluginPopup = ""
+        screenTimePopupOpen = false
+        timerPopupOpen = false
+        netSpeedPopupOpen = false
         resourcePopupOpen = !resourcePopupOpen
+    }
+    function toggleScreenTimePopup() {
+        eqPopupOpen = false
+        mediaPopupOpen = false
+        discordPopupOpen = false
+        batteryPopupOpen = false
+        utilPopupOpen = false
+        resourcePopupOpen = false
+        calendarPopupOpen = false
+        weatherPopupOpen = false
+        pluginPopup = ""
+        timerPopupOpen = false
+        netSpeedPopupOpen = false
+        screenTimePopupOpen = !screenTimePopupOpen
+    }
+    function toggleTimerPopup() {
+        eqPopupOpen = false
+        mediaPopupOpen = false
+        discordPopupOpen = false
+        batteryPopupOpen = false
+        utilPopupOpen = false
+        resourcePopupOpen = false
+        screenTimePopupOpen = false
+        calendarPopupOpen = false
+        weatherPopupOpen = false
+        pluginPopup = ""
+        netSpeedPopupOpen = false
+        timerPopupOpen = !timerPopupOpen
+    }
+    function toggleNetSpeedPopup() {
+        eqPopupOpen = false
+        mediaPopupOpen = false
+        discordPopupOpen = false
+        batteryPopupOpen = false
+        utilPopupOpen = false
+        resourcePopupOpen = false
+        screenTimePopupOpen = false
+        timerPopupOpen = false
+        calendarPopupOpen = false
+        weatherPopupOpen = false
+        pluginPopup = ""
+        netSpeedPopupOpen = !netSpeedPopupOpen
     }
     function toggleCalendarPopup() {
         eqPopupOpen = false
@@ -542,6 +637,9 @@ PanelWindow {
         batteryPopupOpen = false
         utilPopupOpen = false
         resourcePopupOpen = false
+        screenTimePopupOpen = false
+        timerPopupOpen = false
+        netSpeedPopupOpen = false
         weatherPopupOpen = false
         pluginPopup = ""
         calendarPopupOpen = !calendarPopupOpen
@@ -553,6 +651,9 @@ PanelWindow {
         batteryPopupOpen = false
         utilPopupOpen = false
         resourcePopupOpen = false
+        screenTimePopupOpen = false
+        timerPopupOpen = false
+        netSpeedPopupOpen = false
         calendarPopupOpen = false
         pluginPopup = ""
         weatherPopupOpen = !weatherPopupOpen
@@ -564,6 +665,9 @@ PanelWindow {
         discordPopupOpen = false
         batteryPopupOpen = false
         resourcePopupOpen = false
+        screenTimePopupOpen = false
+        timerPopupOpen = false
+        netSpeedPopupOpen = false
         calendarPopupOpen = false
         weatherPopupOpen = false
         pluginPopup = ""
@@ -803,6 +907,66 @@ PanelWindow {
         }
     }
 
+    LazyLoader {
+        id: screenTimePopupLazy
+        // Built the first time it is asked for (not at start-up on every monitor), then kept.
+        property bool want: win.screenTimePopupOpen
+        property bool seen: false
+        onWantChanged: if (want) seen = true
+        active: seen
+
+        ScreenTimePopup {
+            // Starts closed and opens a beat later, so its open-handlers (focus grab,
+            // refresh, ...) run exactly as they do when the button is clicked.
+            property bool ready: false
+            Component.onCompleted: Qt.callLater(() => ready = true)
+            open: screenTimePopupLazy.want && ready
+            parentWindow: win
+            anchorItem: statusBar.screenTimeToggle
+            onCloseRequested: win.screenTimePopupOpen = false
+        }
+    }
+
+    LazyLoader {
+        id: timerPopupLazy
+        // Built the first time it is asked for, then kept.
+        property bool want: win.timerPopupOpen
+        property bool seen: false
+        onWantChanged: if (want) seen = true
+        active: seen
+
+        TimerPopup {
+            // Starts closed and opens a beat later, so its open-handlers run exactly as they do
+            // when the button is clicked.
+            property bool ready: false
+            Component.onCompleted: Qt.callLater(() => ready = true)
+            open: timerPopupLazy.want && ready
+            parentWindow: win
+            anchorItem: statusBar.timerToggle
+            onCloseRequested: win.timerPopupOpen = false
+        }
+    }
+
+    LazyLoader {
+        id: netSpeedPopupLazy
+        // Built the first time it is asked for, then kept.
+        property bool want: win.netSpeedPopupOpen
+        property bool seen: false
+        onWantChanged: if (want) seen = true
+        active: seen
+
+        NetSpeedPopup {
+            // Starts closed and opens a beat later, so its open-handlers run exactly as they do
+            // when the button is clicked.
+            property bool ready: false
+            Component.onCompleted: Qt.callLater(() => ready = true)
+            open: netSpeedPopupLazy.want && ready
+            parentWindow: win
+            anchorItem: statusBar.netSpeedToggle
+            onCloseRequested: win.netSpeedPopupOpen = false
+        }
+    }
+
     // This monitor's own workspace, falling back to the focused one
     readonly property var monitor: Hyprland.monitorFor(screen)
     readonly property int activeWorkspace: NiriWorkspaces.running ? NiriWorkspaces.activeOn(screen?.name ?? "") : monitor?.activeWorkspace?.id ?? Hyprland.focusedWorkspace?.id ?? 1
@@ -1024,7 +1188,25 @@ PanelWindow {
 
                 cpuPercent: resourceSource.cpuPercent
                 memPercent: resourceSource.memPercent
+                cpuTempText: SensorsService.cpuTempText
                 onResourcesClicked: win.toggleResourcePopup()
+
+                timerMode: TimerService.shownMode
+                timerText: TimerService.shownClock
+                timerSizeText: TimerService.shownTemplate
+                timerTip: TimerService.shownTip
+                onTimerClicked: win.toggleTimerPopup()
+
+                netDownText: NetSpeedService.downText
+                netUpText: NetSpeedService.upText
+                netTip: NetSpeedService.tipText
+                onNetSpeedClicked: win.toggleNetSpeedPopup()
+
+                screenTimeText: ScreenTimeService.pillText
+                screenTimeSizeText: ScreenTimeService.pillTemplate
+                screenTimeTip: ScreenTimeService.tipText
+                onScreenTimeClicked: win.toggleScreenTimePopup()
+                onScreenTimeFormatRequested: ScreenTimeService.cycleFormat()
 
                 // "--" until the first fetch lands (or if curl/the network
                 // isn't available) rather than showing a blank pill.

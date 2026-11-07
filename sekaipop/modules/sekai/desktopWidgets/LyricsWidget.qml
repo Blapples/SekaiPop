@@ -134,11 +134,15 @@ PanelWindow {
 
     // ===== a small window while nothing needs the whole screen =====
     // See PaletteWidget.qml: at rest the window is just the card plus some room around it.
-    // On for the lyrics whatever `EditMode.compactWindows` says (that switch is still the
-    // others' and stays off by default): this is the widget that redraws every frame, so a
-    // full-screen layer costs the most here.
-    readonly property bool compact: !EditMode.active && !win.gliding && EditMode.screenName === ""
-        && !EditMode.desktopDragAllowed && win.fullW > 0 && win.placed
+    // Follows `EditMode.compactWindows` like every other widget (off by default; Low-end mode
+    // turns it on). It used to be on for the lyrics whatever that switch said, but swapping the
+    // full-screen window for the small one when Done was pressed made the card flash at the
+    // top-left corner before it reached its spot: the card is drawn shifted by the box's
+    // margin straight away, and the compositor only moves the window a moment later.
+    // To get the idle saving back for the lyrics alone, drop `EditMode.compactWindows &&`
+    // (and the jump comes back with it).
+    readonly property bool compact: EditMode.compactWindows && !EditMode.active && !win.gliding
+        && EditMode.screenName === "" && !EditMode.desktopDragAllowed && win.fullW > 0 && win.placed
     readonly property real boxPad: Math.ceil((0.16 * Math.max(card.width, card.height) + 24) * win.uiScale)
     readonly property real boxX: win.compact ? Math.max(0, Math.floor(card.x * win.uiScale - win.boxPad)) : 0
     readonly property real boxY: win.compact ? Math.max(0, Math.floor(card.y * win.uiScale - win.boxPad)) : 0
@@ -523,7 +527,7 @@ PanelWindow {
         if (x < 0 || y < 0) {
             // The first spot: the middle, low on the screen, above the dock.
             x = (win.roomW - card.width) / 2
-            y = win.roomH - card.height - 150
+            y = win.roomH - card.lyricsH - 150
         } else if (win.spotScale > 0 && win.uiScale > 0) {
             // Saved at another shell scale: same spot on the screen, not the same design
             // pixels (the card keeps its top-left corner).
@@ -669,8 +673,13 @@ PanelWindow {
                 // The room the lyrics have: the stack of lines is centred in it, the tag is
                 // under it. Nothing is drawn behind it.
                 readonly property real midY: 112
+                // The lyrics' own room (the title sits at its bottom); the sync keys hang
+                // under the title, in `keysRoom` of their own, so the lyrics and the title
+                // stay where they were.
+                readonly property real lyricsH: 244
+                readonly property real keysRoom: 84
                 width: 720
-                height: 244
+                height: card.lyricsH + card.keysRoom
 
                 scale: (0.72 + 0.28 * Math.max(0, win.reveal)) * (win.placed ? 1 : 0)
                 opacity: Math.max(0, Math.min(1, win.reveal * 1.6))
@@ -797,19 +806,22 @@ PanelWindow {
                     opacity: card.keysOn ? 1 : 0
                     visible: opacity > 0.01
                     x: Math.round((card.width - width) / 2)
-                    y: card.height - 70
+                    y: card.lyricsH + 8
 
                     Behavior on opacity {
                         NumberAnimation { duration: 180 }
                     }
 
                     sourceComponent: Row {
-                        spacing: 16
+                        spacing: 12
 
+                        // Icon keys (workspace-badge look); the hover tag says which is which.
                         LyricsKey {
-                            label: "<< earlier"
+                            icon: "double_alt_arrow_left"
+                            tipBelow: true
+                            tip: "later"
                             visible: win.lines.length > 0
-                            onClicked: LyricsService.nudge(100)
+                            onClicked: LyricsService.nudge(-100)
                         }
 
                         // This song's nudge; a click clears it.
@@ -820,15 +832,19 @@ PanelWindow {
                         }
 
                         LyricsKey {
-                            label: "later >>"
+                            icon: "double_alt_arrow_right"
+                            tipBelow: true
+                            tip: "earlier"
                             visible: win.lines.length > 0
-                            onClicked: LyricsService.nudge(-100)
+                            onClicked: LyricsService.nudge(100)
                         }
 
                         // Where the words come from, and what each provider found (LyricsSources.qml).
                         LyricsKey {
-                            label: "sources"
-                            onClicked: LyricsService.togglePicker(win.screen ? win.screen.name : "", card.x + card.width / 2, card.y + card.height - 40)
+                            icon: "travel_explore"
+                            tipBelow: true
+                            tip: "sources"
+                            onClicked: LyricsService.togglePicker(win.screen ? win.screen.name : "", card.x + card.width / 2, card.y + card.lyricsH + 8)
                         }
                     }
                 }
@@ -840,7 +856,7 @@ PanelWindow {
                     pixelSize: 15
                     opacity: 0.78
                     x: Math.round((card.width - width) / 2)
-                    y: card.height - height - 2
+                    y: card.lyricsH - height - 2
                 }
             }
         }

@@ -20,9 +20,9 @@
 
 <br>
 
-<img src="assets/shot-desktop-widgets.png" alt="SekaiPop desktop with clock, weather, calendar, to-do, palette, user card, sticky notes and lyrics widgets" width="100%">
+<img src="assets/shot-desktop-widgets.png" alt="SekaiPop desktop with clock, weather, calendar, to-do, palette, water tank, downloader, user card, sticky notes and lyrics widgets" width="100%">
 
-<sub>Clock, weather, calendar, to-do, palette, user card, sticky notes, lyrics and custom images. Every widget is draggable, resizable and optional.</sub>
+<sub>Clock, weather, calendar, to-do, palette, water tank, downloader, user card, sticky notes, lyrics and custom images. Every widget is draggable, resizable and optional.</sub>
 
 </div>
 
@@ -133,6 +133,10 @@ Most shells pick one look and theme it. SekaiPop starts from a single design lan
 | Wi-Fi / Bluetooth "Advanced" buttons | `plasma-nm` `kde-cli-tools` `blueman` |
 | Sounds, updates | `libcanberra` `sound-theme-freedesktop` `pacman-contrib` |
 | Media keys | `playerctl` |
+| Phone mirror | `scrcpy` `android-tools` |
+| Downloader widget | `yt-dlp` `gallery-dl` |
+| Manga and novel readers | `python-requests` `python-curl-cffi` |
+| Manga source: Suwayomi (skip with `--no-suwayomi`) | `jre-openjdk` (the full Java runtime) if you have no full Java 21+, plus the Suwayomi server jar, which the installer downloads from GitHub (about 150 MB) to `~/.local/share/suwayomi/` with a launcher the manga reader starts it through |
 
 </details>
 
@@ -235,7 +239,7 @@ It is read-only: it lists what is installed and what is missing, and changes not
 | `--restore` | Put back the Hyprland config backed up by the last run |
 | `-- <options>` | Pass options on to `install-deps.sh` |
 
-`install-deps.sh` extras (pass them after `--`): `--core-only`, `--with-optional`, `--no-desktop-layer`, `--gpu amd|intel|nvidia|skip`, `--ddc`, `--file-manager dolphin|thunar|none`, `--no-update`, `--no-aur`.
+`install-deps.sh` extras (pass them after `--`): `--core-only`, `--with-optional`, `--no-desktop-layer`, `--gpu amd|intel|nvidia|skip`, `--ddc`, `--file-manager dolphin|thunar|none`, `--no-suwayomi`, `--no-update`, `--no-aur`.
 
 ```bash
 ./install.sh --hypr merge                          # I already have a Hyprland config
@@ -286,6 +290,7 @@ To change one, open **Settings > Hyprland > Keybinds** (or `qs -c sekaipop ipc c
 | <kbd>Super</kbd> + <kbd>I</kbd> | Settings |
 | <kbd>Super</kbd> + <kbd>/</kbd> | Cheatsheet |
 | <kbd>Super</kbd> + <kbd>K</kbd> | On-screen keyboard |
+| <kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>Y</kbd> | Phone mirror (your Android phone, through scrcpy; [docs](docs/PHONE-MIRROR.md)) |
 | <kbd>Super</kbd> + <kbd>M</kbd> | Equalizer (Sekai Pad) |
 | <kbd>Super</kbd> + <kbd>G</kbd> | Game Mode |
 | <kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> | Edit Desktop |
@@ -333,6 +338,7 @@ SekaiPop is built on other people's work, and I'm grateful to all of them.
 - **[pCtrade](https://github.com/pctrade)** (end4-pC): the inspiration for how customizable this shell is, and for his support along the way. The `aurora`, `dots`, `mirror` and `ring` audio visualizers are ported from his work.
 - **[p3dro](https://github.com/P3DROVFX)**'s fork of Illogical Impulse: the Discord Voice service the bar pill and popup are ported from.
 - **[ilyamiro](https://github.com/ilyamiro)** and his Serpentium shell: the equalizer engine behind the Sekai Pad. The 10-band EasyEffects backend (`equalizer.sh`) came to SekaiPop through the pC fork, and the welcome screen follows the structure of his `Start.qml`. The handheld-console design of the Sekai Pad is SekaiPop's own.
+- **[dhrruvsharma](https://github.com/dhrruvsharma)** and his [shell](https://github.com/dhrruvsharma/shell) (GPL-3.0-or-later): the manga and novel readers, panels and Python backends, are ported from it and recoloured from SekaiPop's theme (docs/READERS.md).
 
 **Projects it uses**
 

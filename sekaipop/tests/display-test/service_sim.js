@@ -4,7 +4,7 @@
 const fs = require("fs")
 const locate = require("../lib/locate.js")
 const dmSrc = fs.readFileSync(locate("modules/common/functions/DisplayMath.js"), "utf8").replace(".pragma library", "")
-const DM = new Function(dmSrc + "; return { SCALES, parseModes, matchMode, modeById, logicalSize, placeOf, positions, spec, resolutions, currentRes, rates, modeForRes, overlaps, snap, separate, dock, reflow, normalize, touches, unlinked, view }")()
+const DM = new Function(dmSrc + "; return { SCALES, parseModes, matchMode, modeById, logicalSize, placeOf, positions, spec, resolutions, currentRes, rates, modeForRes, overlaps, snap, separate, dock, reflow, normalize, touches, unlinked, view, parseKnown, mergeKnown, mismatched }")()
 const qml = fs.readFileSync(locate("services/DisplayService.qml"), "utf8")
 
 function grab(name) {
@@ -27,7 +27,7 @@ const runner = { exec: c => calls.push(c) }
 const countdown = { restart() {}, stop() {} }
 const readAgain = { restart() {} }
 root.script = "displays.sh"
-const names = ["resetDraft", "item", "edit", "sizeOf", "rects", "settle", "resized", "setOn", "setMain", "setResolution", "setMode", "setScale", "setPosition", "setPlace", "unlinkedNames", "draftSpecs", "liveSpecs", "apply", "keep", "revert", "discard"]
+const names = ["mergeLive", "checkApplied", "resetDraft", "item", "edit", "sizeOf", "rects", "settle", "resized", "setOn", "setMain", "setResolution", "setMode", "setScale", "setPosition", "setPlace", "unlinkedNames", "draftSpecs", "liveSpecs", "apply", "keep", "revert", "discard"]
 const body = names.map(grab).join("\n")
 // the methods are written as "name(args) {...}", so an object literal takes them as they are
 const methods = new Function("root", "DM", "runner", "countdown", "readAgain",
@@ -178,6 +178,35 @@ eq(root.sizeOf(root.item("A")), { w: 1098, h: 618 }, "175 % rounds up")
 root.setPlace("B", "below")
 root.setPlace("B", "right")
 eq(root.draftSpecs()[1].split("|").slice(3, 5), ["1098", "0"], "flush right of a fractional screen lands past its edge")
+
+// ---- a screen Hyprland does not list (switched off in monitors.lua, then restarted) ----
+calls.length = 0
+root.checking = false; root.tries = 0; root.problem = ""; root.confirming = false; root.dirty = false
+root.known = DM.parseKnown("eDP-1|1920x1080\nHDMI-A-1|1920x1080")
+root.hyprLive = [{ name: "eDP-1", desc: "Laptop", on: true, w: 1920, h: 1080, hz: 60, x: 0, y: 0, scale: 1, transform: 0, modes: modesLaptop }]
+root.mergeLive()
+eq(root.names, ["eDP-1", "HDMI-A-1"], "the unlisted screen still gets a card")
+eq(root.item("HDMI-A-1").on, false, "and it is off")
+eq(root.sizeOf(root.item("HDMI-A-1")), { w: 1920, h: 1080 }, "drawn at the panel size")
+eq(root.item("HDMI-A-1").modeId, "preferred", "turned on with the screen's preferred mode")
+root.setOn("HDMI-A-1", true)
+eq(root.draftSpecs()[1], "HDMI-A-1|on|preferred|1920|0|1.00", "switching it on")
+// Apply did not take: try again twice, then say so
+root.checking = true; root.tries = 0
+root.mergeLive()
+eq(calls.length, 1, "one more try")
+eq(calls[0].slice(0, 3), ["sh", "displays.sh", "force"], "with force")
+eq(calls[0][3], "HDMI-A-1|on|preferred|1920|0|1.00", "for the screen that did not change")
+root.mergeLive(); root.mergeLive()
+eq(calls.length, 2, "two tries at most")
+eq(root.problem.indexOf("HDMI-A-1") >= 0, true, "then it says which screen")
+eq(root.checking, false, "and stops looking")
+// Hyprland did it
+root.hyprLive = root.hyprLive.concat([{ name: "HDMI-A-1", desc: "", on: true, w: 1920, h: 1080, hz: 60, x: 1920, y: 0, scale: 1, transform: 0, modes: modesHdmi }])
+root.checking = true; root.tries = 0; root.problem = ""; calls.length = 0
+root.mergeLive()
+eq(calls.length, 0, "nothing to retry when it took")
+eq(root.checking, false, "done checking")
 
 console.log(fails === 0 ? "service simulation: all passed" : fails + " failed")
 process.exit(fails ? 1 : 0)

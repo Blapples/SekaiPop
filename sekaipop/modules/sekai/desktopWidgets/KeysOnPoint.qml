@@ -12,19 +12,30 @@ import QtQuick
 // (issue #72). A window that maps as None and only turns OnDemand under the pointer
 // never takes it uninvited.
 //
-// Put one last in the window (on top, so nothing above takes the pointer from it; a
-// HoverHandler is passive, so clicks still go through) and use `wanted`:
+// Put one anywhere in the window and use `wanted`:
 //
 //   WlrLayershell.keyboardFocus: keys.wanted ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 //   KeysOnPoint { id: keys }
+//
+// It is NOT an overlay. The first version was a full-window Item with a HoverHandler put
+// last (on top), and a HoverHandler on top takes the hover from everything under it, with
+// `blocking: false` too (Qt 6.12 tested): no task row, button or tile on the card ever saw
+// the mouse, so the To-Do's trash / pencil / grip (they show on hover) and the other hover
+// looks were gone. This one is a size-less Item whose HoverHandler is attached to the
+// window's content item (`parent: root.parent`): the items inside get the hover first, as
+// they should, and this still hears it as long as the handlers inside are non-blocking
+// (`blocking: false`, as the To-Do row and EditChrome's now are; a MouseArea is fine).
 Item {
     id: root
 
     readonly property bool wanted: hover.hovered || root.Window.active
 
-    anchors.fill: parent
+    width: 0
+    height: 0
 
     HoverHandler {
         id: hover
+        parent: root.parent
+        blocking: false
     }
 }

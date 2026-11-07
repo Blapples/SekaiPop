@@ -148,6 +148,21 @@ Item {
         onTriggered: WallpaperService.restackWidgets()
     }
 
+    // Safety net for a slow start (login, a big video): WallpaperService also restacks the
+    // moment Hyprland reports mpvpaper's surface mapping, these two only matter if that event
+    // never comes (a different compositor, a renamed namespace).
+    Timer {
+        id: slowRestack
+        interval: 6000
+        onTriggered: WallpaperService.restackWidgets()
+    }
+
+    Timer {
+        id: slowerRestack
+        interval: 14000
+        onTriggered: WallpaperService.restackWidgets()
+    }
+
     Timer {
         interval: 1500
         running: !root.wanted && root.path !== "" && root.screenName !== ""
@@ -187,6 +202,8 @@ Item {
             // there. Twice, so a slow start is caught too.
             lateRestack.restart()
             laterRestack.restart()
+            slowRestack.restart()
+            slowerRestack.restart()
         }
         onExited: (code, status) => {
             sock.connected = false

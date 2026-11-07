@@ -34,6 +34,9 @@ Item {
     property color bandColor: Qt.rgba(1, 1, 1, 0.22)
     property string dotCorner: "tr"
     property real dotSpacing: 14
+    // False while the plate's width is being animated: the halftone is hidden and not painted
+    // again for every width (see DotField.live), then fades back in at the final one.
+    property bool dotsLive: true
     property bool pressed: false
 
     // Big sticker numerals on the plate: a DARK fill inside the white ring. A
@@ -75,6 +78,10 @@ Item {
                 maxRadius: 3.4
                 reach: 0.95
                 dotColor: root.dotColor
+                live: root.dotsLive
+                // 0.01, not 0: an item at opacity 0 is skipped, and it has to be painted at the end
+                opacity: root.dotsLive ? 1 : 0.01
+                Behavior on opacity { NumberAnimation { duration: root.dotsLive ? 220 : 0 } }
             }
             Slant {
                 x: parent.width * 0.56

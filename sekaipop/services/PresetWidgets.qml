@@ -56,15 +56,16 @@ Singleton {
     readonly property var list: [
         { id: "clock", service: ClockService, skip: ["use24h"] },
 
-        { id: "usercard", service: UserCardService },
+        // A preset saved before the 1x1 size existed has the card as it always was: "2x2".
+        { id: "usercard", service: UserCardService, before: { size: "2x2" } },
 
         // The style is "classic" or "minimal". A preset saved before Minimal existed has no
         // style and wears classic. ("full" was classic's old name: a preset that says it
-        // means classic.)
+        // means classic.) A preset saved before the 1x1 size existed wears 2x2.
         {
             id: "weathercard",
             service: WeatherCardService,
-            before: { style: "classic" },
+            before: { style: "classic", size: "2x2" },
             normalize: part => part.style === "full" ? Object.assign({}, part, { style: "classic" }) : part
         },
 
@@ -110,6 +111,18 @@ Singleton {
             service: PaletteService,
             skip: ["v", "colors", "locks", "source", "scheme", "favorites", "prev", "fresh"],
             before: { size: "full" }
+        },
+
+        // Only the look (place, size, on / off): the glasses you have had, the goal, the size of a glass
+        // and the last days are yours, not the look's.
+        { id: "watertank", service: WaterTankService, skip: ["goal", "glassMl", "glasses", "day", "history"] },
+
+        // Only the look (place, size, on / off): the options, the cobalt address and key, the browser
+        // login and the finished downloads are yours, not the look's.
+        {
+            id: "downloader",
+            service: DownloaderService,
+            skip: ["engine", "mode", "quality", "audioFormat", "folder", "cobaltUrl", "cobaltKey", "notify", "cookies", "cookiesFile", "subs", "names", "askWhich", "done"]
         },
 
         // Only the look (place, on / off): the sync nudges belong to your player and your songs, not to a look.

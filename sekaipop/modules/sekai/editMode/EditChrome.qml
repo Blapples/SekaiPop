@@ -240,6 +240,9 @@ Item {
     HoverHandler {
         id: hover
         enabled: root.editing
+        // Non-blocking: KeysOnPoint (on the window) must still hear the pointer over a card
+        // that is selected for editing, or its text boxes could not take the keyboard.
+        blocking: false
     }
 
     // ===== outline =====

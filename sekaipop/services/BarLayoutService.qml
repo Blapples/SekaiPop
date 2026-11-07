@@ -54,6 +54,9 @@ Singleton {
         { id: "updates", label: "Updates", icon: "system_update_alt" },
         { id: "utilButtons", label: "Utility keys", icon: "construction" },
         { id: "resources", label: "CPU & RAM", icon: "memory" },
+        { id: "screenTime", label: "Screen time", icon: "hourglass" },
+        { id: "timer", label: "Timer", icon: "timer" },
+        { id: "netSpeed", label: "Network speed", icon: "arrow_downward" },
         { id: "status", label: "Wi-Fi, Bluetooth & sound", icon: "wifi" },
         { id: "battery", label: "Battery", icon: "battery_android_full" },
         { id: "keyboardLayout", label: "Keyboard layout", icon: "keyboard_alt" },
@@ -63,6 +66,15 @@ Singleton {
         { id: "date", label: "Date", icon: "calendar_month" },
         { id: "clock", label: "Clock", icon: "schedule" }
     ]
+
+    // The pills a desktop preset saved before it kept a list of its own had to choose from.
+    // FIXED: never add to it. A pill added later (Screen time, Timer and Network speed were the
+    // first) is left out, so an old preset wears it off; a preset saved from now on lists every
+    // pill that existed (`bar.modules`, DesktopPresetService), so a newer pill is the same
+    // for it. Adding a pill is one line in `builtinModules`, nothing here.
+    readonly property var legacyModules: ["workspaces", "activeWindow", "media", "privacy", "discord", "updates",
+        "utilButtons", "resources", "status", "battery", "keyboardLayout", "notifications", "tray", "weather",
+        "date", "clock"]
 
     readonly property var zoneNames: ["left", "center", "right"]
 
@@ -114,7 +126,7 @@ Singleton {
     // The default bar:
     //   LEFT    Active window, Media, Tray
     //   CENTER  Wi-Fi/Bluetooth/sound, Weather, Workspaces, Clock, Date
-    //   RIGHT   Utility keys, Battery, Privacy, Discord call, Notification bell
+    //   RIGHT   Utility keys, Network speed, Screen time, Timer, Battery, Privacy, Discord call, Notification bell
     // CPU & RAM and Updates (both off by default, see SettingsService
     // "bar.resources" and "bar.updates") and Keyboard layout are listed too, so
     // a module that is switched on later lands in a sensible place; none of
@@ -122,7 +134,7 @@ Singleton {
     readonly property var defaults: ({
         left: ["activeWindow", "media", "tray"],
         center: ["status", "weather", "workspaces", "clock", "date"],
-        right: ["utilButtons", "resources", "battery", "keyboardLayout", "privacy", "discord", "updates",
+        right: ["utilButtons", "resources", "netSpeed", "screenTime", "timer", "battery", "keyboardLayout", "privacy", "discord", "updates",
                 "notifications"]
     })
 

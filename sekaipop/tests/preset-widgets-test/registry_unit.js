@@ -28,11 +28,13 @@ const snap = (name, state) => ({
 function world() {
     const w = {
         ClockService: snap("clock", { x: 1, y: 2, shown: true, design: 0, use24h: true }),
-        UserCardService: snap("usercard", { x: 3, y: 4, shown: true }),
-        WeatherCardService: snap("weathercard", { x: 5, y: 6, shown: true, style: "classic" }),
+        UserCardService: snap("usercard", { x: 3, y: 4, shown: true, size: "2x2" }),
+        WeatherCardService: snap("weathercard", { x: 5, y: 6, shown: true, style: "classic", size: "2x2" }),
         VisualizerService: snap("visualizer", { x: 7, y: 8, shown: true, style: "bars", vertical: false, bandX: -1, perf: 2 }),
         CalendarCardService: snap("calendarcard", { x: 9, y: 9, shown: true, size: "full", events: ["mine"] }),
         PaletteService: snap("palettecard", { x: 1, y: 1, shown: true, size: "full", colors: ["#fff"], scheme: "x" }),
+        WaterTankService: snap("watertank", { x: 4, y: 4, shown: true, size: "1x1", goal: 10, glassMl: 300, glasses: 5, day: "2026-10-27", history: { "2026-10-26": 7 } }),
+        DownloaderService: snap("downloader", { x: 6, y: 6, shown: true, size: "2x2", engine: "cobalt", mode: "audio", quality: "720", audioFormat: "opus", folder: "/d", cobaltUrl: "https://c.example", cobaltKey: "secret", notify: false, done: [{ id: 1, file: "/d/a.mp3" }] }),
         LyricsService: snap("lyrics", { x: 2, y: 3, shown: true, syncMs: 250, offsets: { "a|b|1": 300 } }),
         TodoService: { posX: 1, posY: 2, posScale: 1, shown: true, size: "2x2",
             setShown(v) { log.push("todo.setShown(" + v + ")"); this.shown = v },
@@ -50,7 +52,7 @@ const ctx = { name: "P", wearFrames: items => frames.push(items) }
 // ---------- 1. the registry file itself ----------
 let w = world()
 let list = reg.load(w)
-assert.deepStrictEqual(reg.ids, ["clock", "usercard", "weathercard", "visualizer", "todo", "calendarcard", "palettecard", "lyrics", "notes", "images"])
+assert.deepStrictEqual(reg.ids, ["clock", "usercard", "weathercard", "visualizer", "todo", "calendarcard", "palettecard", "watertank", "downloader", "lyrics", "notes", "images"])
 assert.deepStrictEqual(PP.problems(list), [], "the real list has no problems: " + JSON.stringify(PP.problems(list)))
 // problems() says what is wrong with a half-made entry
 assert.ok(PP.problems([{ id: "x" }]).some(m => m.includes("no service")))
@@ -67,6 +69,12 @@ assert.deepStrictEqual(Object.keys(saved).sort(), [...reg.ids].sort())
 assert.strictEqual("use24h" in saved.clock, false, "the clock's 24-hour format is yours")
 assert.strictEqual("events" in saved.calendarcard, false, "the calendar's events are yours")
 assert.strictEqual("colors" in saved.palettecard, false, "the palette's colours are yours")
+for (const k of ["goal", "glassMl", "glasses", "day", "history"])
+    assert.strictEqual(k in saved.watertank, false, "the water tank's " + k + " is yours, not the look's")
+assert.deepStrictEqual(saved.watertank, { x: 4, y: 4, shown: true, size: "1x1" })
+for (const k of ["engine", "mode", "quality", "audioFormat", "folder", "cobaltUrl", "cobaltKey", "notify", "done"])
+    assert.strictEqual(k in saved.downloader, false, "the downloader's " + k + " is yours, not the look's (the cobalt key above all)")
+assert.deepStrictEqual(saved.downloader, { x: 6, y: 6, shown: true, size: "2x2" })
 assert.strictEqual("syncMs" in saved.lyrics, false, "the lyrics' sync nudge is your player's, not the look's")
 assert.strictEqual("offsets" in saved.lyrics, false, "and so are the nudges of single songs")
 assert.strictEqual("perf" in saved.visualizer, false, "the visualizer's performance switch is the machine's")
@@ -83,10 +91,10 @@ assert.deepStrictEqual(got.bad, {}); assert.ok("clock" in got)
 // ---------- 3. THE RULE: an old preset switches a newer widget off ----------
 // A preset saved before the calendar card, palette card, notes and images existed:
 const old = JSON.parse(JSON.stringify(saved))
-for (const id of ["calendarcard", "palettecard", "lyrics", "notes", "images"]) delete old[id]
+for (const id of ["calendarcard", "palettecard", "watertank", "downloader", "lyrics", "notes", "images"]) delete old[id]
 w = world(); list = reg.load(w); log.length = 0
 PP.wear(list, old, ctx)
-for (const id of ["calendarcard", "palettecard", "lyrics", "notes", "images"])
+for (const id of ["calendarcard", "palettecard", "watertank", "downloader", "lyrics", "notes", "images"])
     assert.ok(log.includes(id + ".setShown(false)"), id + " must be switched OFF by a preset that predates it")
 assert.deepStrictEqual(frames, [], "no frames are touched for a preset that holds none")
 for (const id of ["clock", "usercard", "weathercard", "visualizer", "todo"])
@@ -241,8 +249,19 @@ for (const id of ["weathercard", "visualizer", "todo"]) {
     const e = list.find(x => x.id === id)
     assert.ok(e.before && Object.keys(e.before).length, id + " lists what it was before")
 }
-assert.deepStrictEqual(list.find(x => x.id === "weathercard").before, { style: "classic" })
+assert.deepStrictEqual(list.find(x => x.id === "weathercard").before, { style: "classic", size: "2x2" })
+assert.deepStrictEqual(list.find(x => x.id === "usercard").before, { size: "2x2" })
 assert.deepStrictEqual(list.find(x => x.id === "todo").before, { size: "full" })
+// a preset saved before the 1x1 size existed wears the user and weather cards as they always were
+w = world(); list = reg.load(w); w.UserCardService.state.size = "1x1"; w.WeatherCardService.state.size = "1x1"
+const noTinySize = JSON.parse(JSON.stringify(PP.capture(list))); delete noTinySize.usercard.size; delete noTinySize.weathercard.size
+PP.wear(list, noTinySize, ctx)
+assert.deepStrictEqual([w.UserCardService.state.size, w.WeatherCardService.state.size], ["2x2", "2x2"], "an old preset puts the user and weather cards back to 2x2")
+// ... and one saved with 1x1 wears 1x1
+w = world(); list = reg.load(w); w.UserCardService.state.size = "1x1"
+const tinyP = JSON.parse(JSON.stringify(PP.capture(list))); w.UserCardService.state.size = "2x2"
+PP.wear(list, tinyP, ctx)
+assert.strictEqual(w.UserCardService.state.size, "1x1", "a preset saved with 1x1 wears 1x1")
 // every card with a 2x2 / full size wears an old preset as "full"
 for (const id of ["calendarcard", "palettecard"])
     assert.deepStrictEqual(list.find(x => x.id === id).before, { size: "full" }, id + ": an old preset wears the card as it always was")

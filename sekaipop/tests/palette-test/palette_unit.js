@@ -2,7 +2,7 @@
 const fs = require("fs")
 const locate = require("../lib/locate.js")
 const src = fs.readFileSync(locate("modules/common/functions/PaletteMath.js"), "utf8").replace(".pragma library", "")
-const P = new Function(src + "; return { SLOTS, norm, toRgb, fromRgb, toHsl, fromHsl, mix, lum, contrast, textOn, dist, pick, random, makeRng, fill, toShell, key, parse, sameColors, addFavorite, removeFavorite, isFavorite, cleanFavorites, SCHEME_NAMES }")()
+const P = new Function(src + "; return { SLOTS, norm, toRgb, fromRgb, toHsl, fromHsl, mix, lum, contrast, textOn, dist, pick, random, makeRng, fill, toShell, key, parse, sameColors, addFavorite, removeFavorite, isFavorite, cleanFavorites, SCHEME_NAMES, presetCustom, wearCustom }")()
 
 let fails = 0
 const eq = (a, b, m) => { const x = JSON.stringify(a), y = JSON.stringify(b); if (x !== y) { fails++; console.log("FAIL " + m + "\n   got  " + x + "\n   want " + y) } }
@@ -92,6 +92,17 @@ eq(P.cleanFavorites([{ colors: ["#111111", "#222222", "#333333", "#444444", "#55
 eq(P.parse("#111111,#222222,#333333,#444444,#555555"), ["#111111", "#222222", "#333333", "#444444", "#555555"], "parse csv")
 eq(P.parse("#111111,#222222"), null, "parse needs five"); eq(P.parse(["#111111", "#222222", "#333333", "#444444", "nope"]), null, "parse rejects a bad entry")
 eq(P.sameColors("#111111,#222222,#333333,#444444,#555555", ["#111", "#222", "#333", "#444", "#555"]), true, "sameColors")
+
+// a preset keeps its own custom palette
+const five = ["#112233", "#445566", "#778899", "#aabbcc", "#ddeeff"]
+eq(P.presetCustom("custom", five), five, "a preset on the custom theme saves its colours")
+eq(P.presetCustom("custom", five.join(",")), five, "also from the saved text")
+eq(P.presetCustom("vs", five), null, "a preset on another theme carries none")
+eq(P.presetCustom("custom", null), null, "no custom colours yet, nothing to save")
+eq(P.wearCustom("custom", five), five, "worn back")
+eq(P.wearCustom("custom", undefined), null, "an older preset has none: current colours stay")
+eq(P.wearCustom("custom", ["#112233"]), null, "not five colours: ignored")
+eq(P.wearCustom("vs", five), null, "another theme never touches the custom colours")
 
 console.log(fails === 0 ? "palette_unit: all checks passed" : "palette_unit: " + fails + " FAILED")
 process.exit(fails === 0 ? 0 : 1)

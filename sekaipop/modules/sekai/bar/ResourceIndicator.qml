@@ -27,8 +27,35 @@ Item {
     // Which edge the bar is on, so the hover tag opens towards the screen.
     property string barPosition: "top"
 
+    // The CPU temperature ("62°C", "" when this machine has no sensor we can read), added to the tag.
+    property string tempText: ""
+
     // What the hover tag says.
     readonly property string tipText: "CPU " + Math.round(root.cpuPercent) + "% · RAM " + Math.round(root.memPercent) + "%"
+        + (root.tempText !== "" ? " · " + root.tempText : "")
+
+    // Both figures sit in a box as wide as the widest they can read ("100%"), so the pill never
+    // changes width as the numbers change and the pills beside it stay put. Measured in 0s and in
+    // 8s (the widest digit in most fonts).
+    Text {
+        id: probeZero
+        visible: false
+        text: "000%"
+        font.family: mt.fontFamily
+        font.pixelSize: mt.fontSizeInfo
+        font.weight: Font.ExtraBold
+        font.styleName: mt.fontStyleBold
+    }
+    Text {
+        id: probeEight
+        visible: false
+        text: "888%"
+        font.family: mt.fontFamily
+        font.pixelSize: mt.fontSizeInfo
+        font.weight: Font.ExtraBold
+        font.styleName: mt.fontStyleBold
+    }
+    readonly property real figuresWidth: Math.ceil(Math.max(probeZero.implicitWidth, probeEight.implicitWidth))
 
     signal clicked()
 
@@ -133,6 +160,8 @@ Item {
                     color: root.cpuHot ? "#e0575b" : mt.chipInk
                 }
                 Text {
+                    Layout.preferredWidth: root.figuresWidth
+                    horizontalAlignment: Text.AlignHCenter
                     text: root.cpuPercent + "%"
                     color: mt.chipInk
                     font.family: mt.fontFamily
@@ -151,6 +180,8 @@ Item {
                     color: root.memHot ? "#e0575b" : mt.chipInk
                 }
                 Text {
+                    Layout.preferredWidth: root.figuresWidth
+                    horizontalAlignment: Text.AlignHCenter
                     text: root.memPercent + "%"
                     color: mt.chipInk
                     font.family: mt.fontFamily

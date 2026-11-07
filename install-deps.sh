@@ -16,6 +16,7 @@
 #   --no-desktop-layer    skip portals, file manager, fonts, keyring, icon theme (you already have a desktop)
 #   --gpu amd|intel|nvidia|skip   which Vulkan/GL driver set to add (default: detect; nvidia is never installed)
 #   --ddc                 set up i2c access for external-monitor brightness (ddcutil)
+#   --no-suwayomi         skip Suwayomi (the manga reader's extension source: the full Java runtime and a ~150 MB jar)
 #   --file-manager dolphin|thunar|none   which file manager to add (default: dolphin if you run KDE/Plasma or already have it, else thunar)
 #   --no-update           don't run a full system update first
 #   --no-aur  --no-services  --no-fonts  --no-session
@@ -26,7 +27,7 @@
 set -u
 
 DRY=0; YES=0; CORE_ONLY=0; WITH_OPT=0; DESKTOP=1; GPU=auto; DDC=0; FM=auto
-UPDATE=1; AUR=1; SERVICES=1; FONTS=1; SESSION=1
+UPDATE=1; AUR=1; SERVICES=1; FONTS=1; SESSION=1; SUWAYOMI=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --dry-run) DRY=1 ;;
@@ -36,13 +37,14 @@ while [ $# -gt 0 ]; do
         --no-desktop-layer) DESKTOP=0 ;;
         --gpu) shift; GPU=${1:-}; case "$GPU" in amd|intel|nvidia|skip) ;; *) echo "--gpu needs amd|intel|nvidia|skip" >&2; exit 2 ;; esac ;;
         --ddc) DDC=1 ;;
+        --no-suwayomi) SUWAYOMI=0 ;;
         --file-manager) shift; FM=${1:-}; case "$FM" in dolphin|thunar|none) ;; *) echo "--file-manager needs dolphin|thunar|none" >&2; exit 2 ;; esac ;;
         --no-update) UPDATE=0 ;;
         --no-aur) AUR=0 ;;
         --no-services) SERVICES=0 ;;
         --no-fonts) FONTS=0 ;;
         --no-session) SESSION=0 ;;
-        -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
         *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
     shift
@@ -138,6 +140,10 @@ DESKTOP_LAYER=(
 FEATURES=(
   "matugen|matugen-bin" cava easyeffects
   grim slurp cliphist wtype hyprpicker hyprsunset
+  scrcpy android-tools
+  yt-dlp
+  gallery-dl
+  python-requests python-curl-cffi
   imagemagick tesseract tesseract-data-eng swappy wf-recorder ffmpeg
   brightnessctl ddcutil zenity kitty
   plasma-nm kde-cli-tools blueman
@@ -152,6 +158,45 @@ if [ "$CORE_ONLY" = 0 ]; then
     WANT+=("${FEATURES[@]}")
 fi
 [ "$WITH_OPT" = 1 ] && WANT+=("${OPTIONAL[@]}")
+[ "$CORE_ONLY" = 1 ] && SUWAYOMI=0
+
+# Suwayomi (the manga reader's third source, it runs Mihon / Tachiyomi extensions) is a Java program:
+# it needs Java 21 or newer, and we use the FULL runtime (jre-openjdk), not the headless one.
+# Any full JRE/JDK of 21+ already on the system is kept as it is. A headless-only Java is swapped
+# for jre-openjdk (the two packages conflict, so pacman is told to remove the headless one).
+SW_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/suwayomi"
+SW_JAR="$SW_DIR/Suwayomi-Server.jar"
+SW_RUN="$SW_DIR/run.sh"
+java_major() { # java_major <java binary>: the major version, or nothing
+    "$1" -version 2>&1 | sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p' | head -n1
+}
+java_is_full() { # java_is_full <java binary>: true for a full runtime (it has the desktop libraries, the headless build does not)
+    local real; real=$(readlink -f "$1" 2>/dev/null) || return 1
+    [ -e "$(dirname "$real")/../lib/libawt_xawt.so" ]
+}
+find_java21() { # prints the best java of version 21 or newer: a full one first, a headless one only if that is all there is
+    local j m headless=""
+    for j in "$(command -v java 2>/dev/null)" /usr/lib/jvm/*/bin/java; do
+        [ -x "$j" ] || continue
+        m=$(java_major "$j"); case "$m" in ''|*[!0-9]*) continue ;; esac
+        [ "$m" -ge 21 ] || continue
+        if java_is_full "$j"; then printf '%s\n' "$j"; return 0; fi
+        [ -z "$headless" ] && headless=$j
+    done
+    [ -n "$headless" ] && { printf '%s\n' "$headless"; return 0; }
+    return 1
+}
+NEED_JAVA=0
+if [ "$SUWAYOMI" = 1 ]; then
+    jv=$(find_java21) && java_is_full "$jv" || NEED_JAVA=1
+    if [ "$NEED_JAVA" = 1 ]; then
+        if [ -n "${jv:-}" ]; then
+            info "Suwayomi: only a headless Java was found ($jv): it will be replaced by jre-openjdk"
+        else
+            info "Suwayomi needs Java 21 or newer and none was found: adding jre-openjdk"
+        fi
+    fi
+fi
 
 # KDE / Plasma already present? Then Qt apps are themed by Plasma (QT_QPA_PLATFORMTHEME=kde) and qt6ct is not wanted.
 IS_KDE=0
@@ -228,6 +273,14 @@ if [ "${#REPO[@]}" -gt 0 ]; then
     fi
 fi
 
+# Java for Suwayomi on its own, never inside the big batch: jre-openjdk conflicts with jre-openjdk-headless,
+# and in a batch pacman would stop on that question. --ask 4 answers it "yes, remove the headless one".
+if [ "$NEED_JAVA" = 1 ]; then
+    JAVAFLAGS=(--needed --ask 4); [ "$YES" = 1 ] && JAVAFLAGS+=(--noconfirm)
+    pacman -Qq jre-openjdk-headless >/dev/null 2>&1 && info "jre-openjdk-headless is installed: pacman swaps it for jre-openjdk (they conflict)"
+    run sudo pacman -S "${JAVAFLAGS[@]}" jre-openjdk || fail "pacman could not install jre-openjdk (Suwayomi needs it)"
+fi
+
 if [ "${#AURP[@]}" -gt 0 ]; then
     if [ "$AUR" = 0 ]; then
         warn "--no-aur: skipped these, install them yourself: ${AURP[*]}"
@@ -268,6 +321,58 @@ if [ "$FONTS" = 1 ]; then
         info "installing Google Sans Flex (the same source end-4's installer uses)"
         run_sh 'set -e; d=$(mktemp -d); git clone --depth 1 --recurse-submodules https://github.com/end-4/google-sans-flex "$d/gsf"; mkdir -p "$HOME/.local/share/fonts/sekaipop-google-sans-flex"; cp -r "$d/gsf/." "$HOME/.local/share/fonts/sekaipop-google-sans-flex/"; rm -rf "$HOME/.local/share/fonts/sekaipop-google-sans-flex/.git"; fc-cache -f; rm -rf "$d"' \
             || fail "Google Sans Flex install failed (put the .ttf files in ~/.local/share/fonts by hand and run fc-cache -f)"
+    fi
+fi
+
+# Suwayomi: the server jar from GitHub, plus a small launcher the manga reader starts it with.
+suwayomi_url() { # the .jar link of the latest release. GitHub's API first, then the release page (the API has a rate limit)
+    local url="" tag
+    url=$(curl -fsSL --retry 3 https://api.github.com/repos/Suwayomi/Suwayomi-Server/releases/latest 2>/dev/null \
+        | jq -r '[.assets[] | select(.name | test("\\.jar$"; "i"))][0].browser_download_url // empty' 2>/dev/null)
+    if [ -z "$url" ]; then
+        tag=$(curl -fsSIL --retry 3 -o /dev/null -w '%{url_effective}' https://github.com/Suwayomi/Suwayomi-Server/releases/latest 2>/dev/null | sed -n 's#.*/tag/##p')
+        [ -n "$tag" ] && url=$(curl -fsSL --retry 3 "https://github.com/Suwayomi/Suwayomi-Server/releases/expanded_assets/$tag" 2>/dev/null \
+            | grep -o 'href="[^"]*\.jar"' | head -n1 | sed 's/^href="//; s/"$//')
+        [ -n "$url" ] && url="https://github.com$url"
+    fi
+    printf '%s\n' "$url"
+}
+suwayomi_fetch() {
+    local url; url=$(suwayomi_url)
+    [ -n "$url" ] || return 1
+    info "downloading $(basename "$url") (about 150 MB)"
+    curl -fL --retry 3 -o "$SW_JAR.part" "$url" || { rm -f "$SW_JAR.part"; return 1; }
+    [ "$(head -c2 "$SW_JAR.part")" = PK ] || { rm -f "$SW_JAR.part"; return 1; }   # a jar is a zip
+    mv "$SW_JAR.part" "$SW_JAR"
+}
+suwayomi_launcher() { # suwayomi_launcher <java binary>
+    {
+        echo '#!/bin/sh'
+        echo '# written by SekaiPop install-deps.sh: the manga reader starts Suwayomi through this file'
+        echo '# (no browser window, no tray icon). Safe to edit; delete it to switch Suwayomi off.'
+        printf 'exec "%s" \\\n' "$1"
+        echo '    -Dsuwayomi.tachidesk.config.server.initialOpenInBrowserEnabled=false \'
+        echo '    -Dsuwayomi.tachidesk.config.server.systemTrayEnabled=false \'
+        printf '    -jar "%s"\n' "$SW_JAR"
+    } > "$SW_RUN" && chmod +x "$SW_RUN"
+}
+if [ "$SUWAYOMI" = 1 ]; then
+    if [ "$DRY" = 1 ]; then
+        info "would download the latest Suwayomi-Server jar to $SW_JAR and write $SW_RUN"
+    else
+        mkdir -p "$SW_DIR"
+        if [ -f "$SW_JAR" ]; then
+            info "Suwayomi jar already at $SW_JAR (delete it and run this again to update)"
+        elif ! suwayomi_fetch; then
+            warn "could not download Suwayomi: save the .jar from https://github.com/Suwayomi/Suwayomi-Server/releases as $SW_JAR and run this again"
+        fi
+        if [ -f "$SW_JAR" ]; then
+            if jv=$(find_java21); then
+                suwayomi_launcher "$jv" && info "wrote $SW_RUN (uses $jv)" || fail "could not write $SW_RUN"
+            else
+                fail "Suwayomi has no Java 21+ to run on (jre-openjdk did not install, see above). Fix that, then run ./install-deps.sh again"
+            fi
+        fi
     fi
 fi
 
@@ -396,5 +501,10 @@ nx "Copy the rice folder to ${B}~/.config/quickshell/sekaipop${Z}"
 printf '      %sand run shaders/compile-shaders.sh once if your Qt is not 6.12.%s\n' "$D" "$Z"
 nx "Run ${B}./check-deps.sh${Z}, it should end with \"core missing: 0\"."
 nx "Start the shell:  ${B}qs -c sekaipop${Z}"
+if [ "$SUWAYOMI" = 1 ]; then
+    nx "Manga reader: the Source key offers ${B}Suwayomi${Z}; it starts by itself when you pick it."
+    printf '      %sIt has no extensions yet: in Browse press the puzzle key beside Source (Sources page),\n' "$D"
+    printf '      add a repository under Repositories, then install the extensions you want.%s\n' "$Z"
+fi
 [ "$DRY" = 1 ] || { here=$(cd "$(dirname "$0")" && pwd); [ -f "$here/check-deps.sh" ] && { printf '\n'; bash "$here/check-deps.sh" --core; }; }
 [ "${#FAILED[@]}" -eq 0 ]

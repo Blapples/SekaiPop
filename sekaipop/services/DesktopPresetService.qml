@@ -5,6 +5,7 @@ import Quickshell.Io
 import qs.modules.common
 import "../modules/common/functions/PresetParts.js" as PP
 import "../modules/common/functions/Framing.js" as FR
+import "../modules/common/functions/PaletteMath.js" as PM
 
 // Desktop presets: save the whole look of the desktop under a name, wear it
 // again with one click. They live on the PRESETS tab of Edit Desktop's shelf
@@ -26,8 +27,11 @@ import "../modules/common/functions/Framing.js" as FR
 // What a preset holds:
 //   settings    the Settings Panel's switches and numbers (SettingsService)
 //               except the ones listed in `keepExact` / `keepPrefix` below
-//   theme       the colour group and Light / Dark / Darker
-//   bar         style, edge, and the left / centre / right arrangement
+//   theme       the colour group and Light / Dark / Darker; with the Custom palette theme
+//               also its five colours (an older preset without them keeps the current ones)
+//   bar         style, edge, and the left / centre / right arrangement, and the list of bar
+//               pills that existed when it was saved: a pill added later is worn OFF by a
+//               preset saved without it (wornSettings), the same rule as the desktop widgets
 //   widgets     every desktop widget listed in PresetWidgets.qml (clock, user card, weather, to-do,
 //               visualizer, calendar card, palette card, sticky notes, image frames): on or off,
 //               where they sit, and their looks (the to-do TASKS, the calendar's events and the
@@ -83,7 +87,8 @@ import "../modules/common/functions/Framing.js" as FR
 //                            and web-suggestion switches, update checks,
 //                            Pomodoro times, the screenshot picker, the
 //                            wallpaper video / thumbnail engine, app and system
-//                            colour sync, Wallhaven's sort and filters in the
+//                            colour sync, the phone mirror (sound, notch, address and the
+//                            rest of phoneMirror.*), Wallhaven's sort and filters in the
 //                            Wallpapers picker (the Quick Panel phone's own style and
 //                            settings are NOT here: they are the `phone` part below)
 //   each widget's `skip`     (PresetWidgets.qml) the visualizer's audio engine and
@@ -184,7 +189,8 @@ Singleton {
         "region.",
         "overview.",
         "appTheme.",
-        "systemTheme."
+        "systemTheme.",
+        "phoneMirror."   // the phone mirror is about this machine and this phone (sound, notch, address): global
     ]
 
     // True for a Settings Panel key a preset never reads or writes.
@@ -331,6 +337,26 @@ Singleton {
             SettingsService.set("lock.style", l.style)
     }
 
+    // The colour group and mode; on the custom theme also its five colours, so each preset
+    // keeps its own custom palette (the shell has one custom slot, a preset refills it).
+    function themePart() {
+        const t = { group: ThemeService.current, mode: ThemeService.mode }
+        const custom = PM.presetCustom(t.group, ThemeService.customColors)
+        if (custom)
+            t.custom = custom
+        return t
+    }
+
+    // The preset's Settings Panel part as it is WORN, and as it is compared: a bar pill the
+    // preset was saved without (not in its `bar.modules`; for one saved before that list
+    // existed, not in BarLayoutService.legacyModules) is off, not whatever its switch is now.
+    function wornSettings(d) {
+        if (!d.settings || typeof d.settings !== "object")
+            return null
+        const known = d.bar && Array.isArray(d.bar.modules) ? d.bar.modules : BarLayoutService.legacyModules
+        return PP.withBarOff(d.settings, known, BarLayoutService.builtinModules.map(m => m.id), SettingsService.defaults)
+    }
+
     function capture() {
         const settings = {}
         for (const k of Object.keys(SettingsService.values).sort()) {
@@ -340,14 +366,17 @@ Singleton {
 
         const out = {
             settings: settings,
-            theme: { group: ThemeService.current, mode: ThemeService.mode },
+            theme: root.themePart(),
             phone: root.phonePart(),
             overview: root.overviewPart(),
             lock: root.lockPart(),
             bar: {
                 style: BarStyleService.style,
                 position: BarPositionService.position,
-                layout: JSON.parse(JSON.stringify(BarLayoutService.payload()))
+                layout: JSON.parse(JSON.stringify(BarLayoutService.payload())),
+                // The pills this shell has: a pill added later is not in a preset saved now,
+                // so that preset wears it off (see wornSettings).
+                modules: BarLayoutService.builtinModules.map(m => m.id).sort()
             },
             widgets: PP.capture(PresetWidgets.all)
         }
@@ -436,6 +465,7 @@ Singleton {
                     continue
                 rest[k] = now[k]
             }
+            rest.bar = PP.barNoModules(rest.bar)
             if (noFrames && rest.widgets && rest.widgets.images) {
                 rest.widgets = Object.assign({}, rest.widgets,
                     { images: { shown: rest.widgets.images.shown } })
@@ -457,6 +487,13 @@ Singleton {
         // preset could not have held keeps the widget's own value.
         if (c.widgets && typeof c.widgets === "object")
             c.widgets = PP.digestWidgets(PresetWidgets.all, c.widgets)
+        // Worn the way wearing does it (pills the preset did not know are off), and without
+        // the list of pills, which is not part of what the desktop looks like.
+        const worn = root.wornSettings(data)
+        if (worn)
+            c.settings = worn
+        if (c.bar)
+            c.bar = PP.barNoModules(c.bar)
         return root.stable(c)
     }
 
@@ -983,7 +1020,7 @@ Singleton {
         } catch (e) {
             return { bar: false, dock: false, clock: false, visualizer: false, usercard: false, weathercard: false, todo: false }
         }
-        const mine = (d.settings && typeof d.settings === "object") ? d.settings : {}
+        const mine = root.wornSettings(d) || {}
         const keysChanged = prefix => {
             for (const k of Object.keys(mine)) {
                 if (k.indexOf(prefix) !== 0 || root.keeps(k))
@@ -993,7 +1030,7 @@ Singleton {
             }
             return false
         }
-        const bar = (d.bar && typeof d.bar === "object" && root.stable(d.bar) !== root.stable(now.bar))
+        const bar = (d.bar && typeof d.bar === "object" && root.stable(PP.barNoModules(d.bar)) !== root.stable(PP.barNoModules(now.bar)))
             || keysChanged("bar.")
 
         // A widget switching to another variant (the clock's design; the weather
@@ -1096,7 +1133,7 @@ Singleton {
     function wear(d, name, found, back) {
         // 1. The Settings Panel's switches (and the per-monitor wallpaper mode).
         if (d.settings && typeof d.settings === "object")
-            SettingsService.applyPreset(d.settings, root.keeps)
+            SettingsService.applyPreset(root.wornSettings(d), root.keeps)
 
         // 1b. The Quick Panel phone's style and settings, and the Overview's. A preset without
         // that part (saved before it was one) leaves them alone.
@@ -1106,8 +1143,13 @@ Singleton {
 
         // 2. Colours.
         if (d.theme) {
-            if (typeof d.theme.group === "string")
+            if (typeof d.theme.group === "string") {
+                // The colours first: the "custom" theme only exists once there are some.
+                const custom = PM.wearCustom(d.theme.group, d.theme.custom)
+                if (custom)
+                    ThemeService.setCustomColors(custom)
                 ThemeService.setTheme(d.theme.group)
+            }
             if (d.theme.mode === "light" || d.theme.mode === "dark" || d.theme.mode === "darker")
                 ThemeService.setModeAndSystem(d.theme.mode)
         }

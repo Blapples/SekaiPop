@@ -368,7 +368,7 @@ def open_capture():
     attempts = []
     if shutil.which("parec"):
         attempts.append(["parec", "--device=@DEFAULT_MONITOR@", "--format=s16le",
-                         "--rate=%d" % SR, "--channels=1", "--latency-msec=20"])
+                         "--rate=%d" % SR, "--channels=1", "--latency-msec=32"])
     if shutil.which("pw-record"):
         attempts.append(["pw-record", "-P", "stream.capture.sink=true", "--format", "s16",
                          "--rate", str(SR), "--channels", "1", "-"])

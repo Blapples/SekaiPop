@@ -179,6 +179,9 @@ Item {
     readonly property Item resourceToggle: resourceIndicator
     readonly property Item dateToggle: dateIndicator
     readonly property Item weatherToggle: weatherIndicator
+    readonly property Item screenTimeToggle: screenTimeIndicator
+    readonly property Item timerToggle: timerIndicator
+    readonly property Item netSpeedToggle: netSpeedIndicator
     readonly property Item mediaToggle: media
     readonly property Item discordToggle: discordPill
     // The utility pill (what its flyout grows out of) and the UtilButtons the flyout's keys act on.
@@ -211,7 +214,7 @@ Item {
     property var layout: ({
         left: ["activeWindow", "media", "tray"],
         center: ["status", "weather", "workspaces", "clock", "date"],
-        right: ["utilButtons", "resources", "battery", "keyboardLayout", "privacy", "discord", "updates",
+        right: ["utilButtons", "resources", "netSpeed", "screenTime", "timer", "battery", "keyboardLayout", "privacy", "discord", "updates",
                 "notifications"]
     })
 
@@ -282,9 +285,27 @@ Item {
     // ...standing on the left / right edge (Pill.capsuleV asks for this).
     readonly property bool capsuleVertical: status_Bar.capsule && status_Bar.vertical
 
-    // CPU/RAM, fed by ResourceSource.qml via Bar.qml.
+    // Screen time, fed by ScreenTimeService.qml via Bar.qml: the time as written ("3h 12m", "03:12"...) and the hover tag.
+    property string screenTimeText: "0m"
+    property string screenTimeTip: ""
+    property string screenTimeSizeText: "00h 00m"
+
+    // Timer, fed by TimerService.qml via Bar.qml: which of timer / stopwatch / pomodoro runs ("" =
+    // none), its clock, the widest the clock can get, and the hover tag.
+    property string timerMode: ""
+    property string timerText: ""
+    property string timerSizeText: "00:00"
+    property string timerTip: ""
+
+    // Network speed, fed by NetSpeedService.qml via Bar.qml.
+    property string netDownText: "0"
+    property string netUpText: "0"
+    property string netTip: ""
+
+    // CPU/RAM, fed by ResourceSource.qml via Bar.qml; the temperature by SensorsService.qml.
     property real cpuPercent: 0
     property real memPercent: 0
+    property string cpuTempText: ""
 
     // Battery, fed by BatterySource.qml via Bar.qml. batteryAvailable
     // is false on a desktop — BatteryIndicator then takes up no space.
@@ -410,6 +431,9 @@ Item {
         case "updates": return [updatesBadge]
         case "utilButtons": return [utilKeys]
         case "resources": return [resourceIndicator]
+        case "screenTime": return [screenTimeIndicator]
+        case "timer": return [timerIndicator]
+        case "netSpeed": return [netSpeedIndicator]
         case "status": return [statusPill]
         case "battery": return [batteryIndicator]
         case "keyboardLayout": return [kbLayoutIndicator]
@@ -470,6 +494,10 @@ Item {
     // The date pill was clicked: open / close the calendar dropdown.
     signal dateClicked()
     signal weatherClicked()
+    signal screenTimeClicked()
+    signal screenTimeFormatRequested()
+    signal timerClicked()
+    signal netSpeedClicked()
     signal wallpapersToggleRequested()
     // Notification bell clicked: opens the Quick Panel.
     signal notificationsToggleRequested()
@@ -960,6 +988,7 @@ Item {
             transform: Translate { y: status_Bar.liftY }
             cpuPercent: status_Bar.cpuPercent
             memPercent: status_Bar.memPercent
+            tempText: status_Bar.cpuTempText
             barPosition: status_Bar.barPosition
             onClicked: status_Bar.resourcesClicked()
         }
@@ -1093,6 +1122,62 @@ Item {
             iconName: status_Bar.weatherIconName
             barPosition: status_Bar.barPosition
             onClicked: status_Bar.weatherClicked()
+        }
+
+        // Hourglass + today's time at the screen; click opens the screen time card
+        // (ScreenTimePopup.qml, hung off this by Bar.qml).
+        ScreenTimeIndicator {
+            id: screenTimeIndicator
+            parent: status_Bar.zoneItem("screenTime")
+            Layout.row: status_Bar.vertical ? status_Bar.slotOf("screenTime") : 0
+            Layout.column: status_Bar.vertical ? 0 : status_Bar.slotOf("screenTime")
+            visible: !status_Bar.tighterV && status_Bar.shows("screenTime")
+            vertical: status_Bar.vertical
+            Layout.alignment: status_Bar.crossAlign
+            transform: Translate { y: status_Bar.liftY }
+            text: status_Bar.screenTimeText
+            tipText: status_Bar.screenTimeTip
+            sizeText: status_Bar.screenTimeSizeText
+            barPosition: status_Bar.barPosition
+            onClicked: status_Bar.screenTimeClicked()
+            onFormatRequested: status_Bar.screenTimeFormatRequested()
+        }
+
+        // The clock of a running timer, stopwatch or pomodoro (just the icon when nothing runs);
+        // click opens their card (TimerPopup.qml, hung off this by Bar.qml).
+        TimerIndicator {
+            id: timerIndicator
+            parent: status_Bar.zoneItem("timer")
+            Layout.row: status_Bar.vertical ? status_Bar.slotOf("timer") : 0
+            Layout.column: status_Bar.vertical ? 0 : status_Bar.slotOf("timer")
+            visible: !status_Bar.tighterV && status_Bar.shows("timer")
+            vertical: status_Bar.vertical
+            Layout.alignment: status_Bar.crossAlign
+            transform: Translate { y: status_Bar.liftY }
+            mode: status_Bar.timerMode
+            text: status_Bar.timerText
+            sizeText: status_Bar.timerSizeText
+            tipText: status_Bar.timerTip
+            barPosition: status_Bar.barPosition
+            onClicked: status_Bar.timerClicked()
+        }
+
+        // Download and upload speed; click opens the network card (NetSpeedPopup.qml, hung off this
+        // by Bar.qml).
+        NetSpeedIndicator {
+            id: netSpeedIndicator
+            parent: status_Bar.zoneItem("netSpeed")
+            Layout.row: status_Bar.vertical ? status_Bar.slotOf("netSpeed") : 0
+            Layout.column: status_Bar.vertical ? 0 : status_Bar.slotOf("netSpeed")
+            visible: !status_Bar.tighterV && status_Bar.shows("netSpeed")
+            vertical: status_Bar.vertical
+            Layout.alignment: status_Bar.crossAlign
+            transform: Translate { y: status_Bar.liftY }
+            downText: status_Bar.netDownText
+            upText: status_Bar.netUpText
+            tipText: status_Bar.netTip
+            barPosition: status_Bar.barPosition
+            onClicked: status_Bar.netSpeedClicked()
         }
 
         // The plugins' entries: one per plugin with a bar entry, each placed in its zone and

@@ -15,14 +15,19 @@ Canvas {
     property string corner: "tr"
     // How much of the diagonal the dots take to fade out (1 = all of it).
     property real reach: 1.0
+    // False while the size is being animated: the field is not painted again for every width it
+    // passes through (a paint is a script loop and a texture upload), only once when it is true
+    // again. The caller hides it meanwhile (a Canvas that changes size is cleared).
+    property bool live: true
 
     onDotColorChanged: requestPaint()
     onSpacingChanged: requestPaint()
     onMaxRadiusChanged: requestPaint()
     onCornerChanged: requestPaint()
     onReachChanged: requestPaint()
-    onWidthChanged: requestPaint()
-    onHeightChanged: requestPaint()
+    onWidthChanged: if (live) requestPaint()
+    onHeightChanged: if (live) requestPaint()
+    onLiveChanged: if (live) requestPaint()
     Component.onCompleted: requestPaint()
 
     onPaint: {

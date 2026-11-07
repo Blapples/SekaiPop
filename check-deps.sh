@@ -279,8 +279,12 @@ cmd 3 swappy swappy pac "annotate on right-drag"
 cmd 3 wf-recorder wf-recorder pac "screen recording"
 cmd 2 hyprpicker hyprpicker pac "eyedropper"
 cmd 2 wtype wtype pac "on-screen keyboard, emoji paste"
+cmd 3 scrcpy scrcpy pac "phone mirror (your Android phone on a phone at the side of the screen)"
+cmd 3 adb android-tools pac "phone mirror"
 cmd 1 curl curl pac "weather, lyrics"
 cmd 1 jq jq pac
+cmd 3 yt-dlp yt-dlp pac "downloader widget (saves videos and sound from links)"
+cmd 3 gallery-dl gallery-dl pac "downloader widget (saves pictures and picture posts)"
 any 2 "file chooser for avatar/banner/custom image" zenity pac zenity kdialog yad
 any 3 "terminal (kitty, foot, alacritty...)" kitty pac kitty foot alacritty wezterm gnome-terminal
 
@@ -322,6 +326,45 @@ cmd 2 ffmpeg ffmpeg pac "thumbnails, song recognition"
 cmd 3 easyeffects easyeffects pac "the 10-band equalizer"
 cmd 3 songrec songrec aur "song recognition"
 cmd 3 mpvpaper mpvpaper aur "video wallpaper via mpv (built-in player is the fallback)"
+
+# --------------------------------------------------------------------------
+section "Manga and novel readers"
+# --------------------------------------------------------------------------
+# The panels' backends run under the private venv from scripts/readers/setup-venv.sh when it exists,
+# else under the system python3.
+RD_VENV="${XDG_DATA_HOME:-$HOME/.local/share}/sekaipop/readers/venv/bin/python"
+if [ -x "$RD_VENV" ]; then RD_PY="$RD_VENV"; RD_WHICH="reader venv"; else RD_PY=python3; RD_WHICH="system python3"; fi
+if have "$RD_PY" || [ -x "$RD_PY" ]; then
+    "$RD_PY" -c 'import requests' 2>/dev/null && record 2 "python module requests ($RD_WHICH)" 1 python-requests pac \
+        || record 2 "python module requests ($RD_WHICH)" 0 python-requests pac "the manga and novel backends need it"
+    "$RD_PY" -c 'import curl_cffi' 2>/dev/null && record 2 "python module curl_cffi ($RD_WHICH)" 1 python-curl-cffi pac \
+        || record 2 "python module curl_cffi ($RD_WHICH)" 0 python-curl-cffi pac "WeebCentral needs it to get past Cloudflare"
+fi
+# Suwayomi: the full Java 21+ runtime (jre-openjdk), the jar, and the launcher install-deps.sh writes (the manga reader starts Suwayomi through it)
+SW_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/suwayomi"
+java21=0; java21_headless=0
+for j in "$(command -v java 2>/dev/null)" /usr/lib/jvm/*/bin/java; do
+    [ -x "$j" ] || continue
+    jm=$("$j" -version 2>&1 | sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p' | head -n1)
+    case "$jm" in ''|*[!0-9]*) continue ;; esac
+    [ "$jm" -ge 21 ] || continue
+    jreal=$(readlink -f "$j" 2>/dev/null)
+    if [ -e "$(dirname "$jreal")/../lib/libawt_xawt.so" ]; then java21=1; break; fi
+    java21_headless=1
+done
+if [ "$java21" = 0 ] && [ "$java21_headless" = 1 ]; then
+    # no package is listed here on purpose: jre-openjdk conflicts with the headless one, install-deps.sh swaps them
+    record 3 "Java 21 or newer, full runtime (Suwayomi): only a headless Java found" 0 "" manual "run ./install-deps.sh, it swaps in jre-openjdk"
+else
+    record 3 "Java 21 or newer, full runtime (Suwayomi, the manga reader's extension source)" "$java21" jre-openjdk pac
+fi
+if [ -f "$SW_DIR/Suwayomi-Server.jar" ] && [ -x "$SW_DIR/run.sh" ]; then
+    record 3 "Suwayomi server + launcher ($SW_DIR)" 1 "" manual
+elif [ -n "${SEKAIPOP_SW_CMD:-}${SEKAIPOP_SW_URL:-}" ]; then
+    record 3 "Suwayomi (set by SEKAIPOP_SW_CMD / SEKAIPOP_SW_URL)" 1 "" manual
+else
+    record 3 "Suwayomi server + launcher ($SW_DIR)" 0 "Suwayomi: run ./install-deps.sh (downloads the jar, about 150 MB)" manual "optional manga source"
+fi
 
 # --------------------------------------------------------------------------
 section "Updates badge, displays, extras"

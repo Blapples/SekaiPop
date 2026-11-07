@@ -69,6 +69,10 @@ Item {
 
             Text {
                 anchors.centerIn: parent
+                // A long label (a source's name) is cut short instead of spilling into its neighbour
+                width: Math.min(implicitWidth, root.slot - 10)
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignHCenter
                 text: modelData.label
                 color: index === root.index ? mt.colBorder : mt.inkSub
                 font.family: mt.fontFamily

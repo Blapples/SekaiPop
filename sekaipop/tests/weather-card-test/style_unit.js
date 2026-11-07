@@ -49,7 +49,7 @@ b = fresh(); b.restore("not json"); ok(b.style === "classic" && b.loaded, "an un
 
 // ---- old presets wear classic: the registry entry says what the style was before it existed ----
 const reg = fs.readFileSync(require("../lib/locate")("services/PresetWidgets.qml"), "utf8")
-ok(/id: "weathercard",\s*service: WeatherCardService,\s*before: \{ style: "classic" \}/.test(reg), "PresetWidgets: weathercard's `before` is classic")
+ok(/id: "weathercard",\s*service: WeatherCardService,\s*before: \{ style: "classic", size: "2x2" \}/.test(reg), "PresetWidgets: weathercard's `before` is classic")
 ok(/normalize: part => part\.style === "full"/.test(reg), 'PresetWidgets: a preset that says "full" means classic')
 const plan = fs.readFileSync(require("../lib/locate")("services/DesktopPresetService.qml"), "utf8")
 ok(/PP\.readPart\(e, wmine\[e\.id\]\)/.test(plan), "the motion plan reads an old preset the same way (through the registry)")
@@ -57,7 +57,7 @@ ok(!/wmine\.weathercard\.style/.test(plan), "no weather special case left in the
 
 // ---- the widget ----
 ok(/readonly property bool minimal: WeatherCardService\.minimal/.test(w), "widget follows WeatherCardService.minimal")
-ok(/active: !win\.minimal\s+sourceComponent: classicFace/.test(w) && /active: win\.minimal\s+sourceComponent: minimalFace/.test(w), "only the look in use is built (two Loaders)")
+ok(/active: !win\.minimal && !card\.tiny\s+sourceComponent: classicFace/.test(w) && /active: win\.minimal && !card\.tiny\s+sourceComponent: minimalFace/.test(w), "only the look in use is built (a Loader each; neither at 1 x 1)")
 ok(/onMinimalChanged: waveAnim\.restart\(\)/.test(w), "switching replays the pop-ins")
 ok(/SizeKey \{\s*shown: chrome\.selected[\s\S]*?onToggled: WeatherCardService\.toggleStyle\(\)/.test(w), "Edit Desktop: style key shows while selected and toggles")
 ok(/ipc call weathercard style/.test(w), "header documents the ipc call")
@@ -77,7 +77,7 @@ ok(/WeatherGlyph/.test(mini) && /SekaiPlate/.test(mini) && /Slant \{/.test(mini)
 ok(!/Water \{|windArrow|WM\.curvePoints|calendar_view_day/.test(mini), "minimal has no gauges, curve or Hourly / Days key")
 
 // ---- the minimal layout adds up (design px; the content is 286 x 238) ----
-const num = (name, t = mini) => { const m = new RegExp("property (?:real|int) " + name + ":\\s*([0-9.]+)").exec(t); assert(m, "no " + name); return +m[1] }
+const num = (name, t = mini) => { const m = new RegExp("property (?:real|int) " + name + ":\\s*(?:card\\.tiny \\? [0-9.]+ : )?([0-9.]+)").exec(t); assert(m, "no " + name); return +m[1] }
 const contentW = num("contentW", w), contentH = num("contentH", w)
 ok(contentW === 286 && contentH === 238, "the 2 x 2 content is still 286 x 238")
 const plateH = num("plateH"), laneY = num("laneY"), cols = num("cols")

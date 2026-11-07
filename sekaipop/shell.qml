@@ -20,9 +20,12 @@ import qs.modules.sekai.notificationPopup
 import qs.modules.sekai.onScreenDisplay
 import qs.modules.sekai.overview
 import qs.modules.sekai.palette
+import qs.modules.sekai.phoneMirror
 import qs.modules.sekai.polkit
 import qs.modules.sekai.quickPanel
+import qs.modules.sekai.readers
 import qs.modules.sekai.regionSelector
+import qs.modules.sekai.screenCorners
 import qs.modules.sekai.visualizer
 import qs.modules.sekai.welcome
 
@@ -196,6 +199,11 @@ ShellRoot {
     // header comment for the exact hyprland.lua binds to add.
     OSDPopup {}
 
+    // The scroll corners (services/CornerScrollService.qml / CornerScroll.qml): scroll the
+    // wheel with the pointer in the top-left / top-right corner of a screen to change the
+    // volume / brightness. Off until Settings -> General -> Screen corners is switched on.
+    CornerScroll {}
+
     // The reload report (ReloadPopup.qml): "Shell reloaded" after a
     // successful reload, and a card with Quickshell's error text when a
     // reload fails (a QML syntax error, a bad import...). It replaces
@@ -254,6 +262,10 @@ ShellRoot {
     // The idle times (lock, screen off, sleep), written for hypridle. A singleton only
     // exists once something reads it, and this one has to write its file at startup.
     readonly property bool idleTimesReady: IdleService.ready
+
+    // Screen time (the bar pill): counting starts with the shell, not with the first bar that
+    // happens to read it, so the singleton has to exist from the start.
+    readonly property bool screenTimeReady: ScreenTimeService.loaded
 
     // The app fonts picked in the Settings are put back at start if something changed them,
     // so this singleton has to exist from the start as well.
@@ -388,6 +400,19 @@ ShellRoot {
         quickPanel: panel
         overviewBoard: overview
     }
+
+    // The phone mirror (modules/sekai/phoneMirror/, services/PhoneMirrorService.qml): your
+    // Android phone's screen, live, on a phone at the side of the screen, through scrcpy.
+    // Nothing runs until it is opened (no adb polling, no session manager):
+    //   qs -c sekaipop ipc call phonemirror toggle | show | hide
+    // (also `connect <ip>:5555`, `restart`, `detach`, `key <home|back|recents|power>`)
+    PhoneMirror {}
+
+    // The manga reader (left) and the novel reader (right) as side panels (modules/sekai/readers/,
+    // docs/READERS.md). Nothing is built or run until one is opened:
+    //   qs -c sekaipop ipc call mangareader toggle | show | hide | minimize | close
+    //   qs -c sekaipop ipc call novelreader toggle | show | hide | minimize | close
+    ReaderHost {}
 
     // The on-screen keyboard (OnScreenKeyboard.qml, services/KeyboardService.qml):
     // the bar's workspace badges as keys, typing through wtype. Opened by the
@@ -828,6 +853,8 @@ ShellRoot {
     property bool weatherCardResetRequested: false
     property bool calendarCardResetRequested: false
     property bool paletteCardResetRequested: false
+    property bool waterTankResetRequested: false
+    property bool downloaderResetRequested: false
     property bool lyricsResetRequested: false
 
     FocusGate {
@@ -1037,6 +1064,37 @@ ShellRoot {
         }
     }
 
+    // The Water Tank (modules/sekai/desktopWidgets/WaterTankWidget.qml): a glass that fills as you drink,
+    // 1 x 1 or 2 x 2. One copy, on one monitor. Off until you add it.
+    FocusGate {
+        id: watertankGate
+        widgetId: "watertank"
+        unloads: true
+        screenName: EditMode.homeScreen(WaterTankService.screenName)
+    }
+
+    LazyLoader {
+        id: waterTankWidgetLoader
+        active: shellRoot.woke(11) && shellRoot.widgetsAllowed && ((WaterTankService.loaded && WaterTankService.shown && !watertankGate.gone) || EditMode.active || shellRoot.waterTankResetRequested)
+        WaterTankWidget {}
+    }
+
+    // The Downloader (modules/sekai/desktopWidgets/DownloaderWidget.qml): copy a link, press the
+    // key, get the file (yt-dlp, or a cobalt instance). 1 x 1 or 2 x 2. One copy, on one monitor.
+    // Off until you add it; nothing runs until you press the key.
+    FocusGate {
+        id: downloaderGate
+        widgetId: "downloader"
+        unloads: true
+        screenName: EditMode.homeScreen(DownloaderService.screenName)
+    }
+
+    LazyLoader {
+        id: downloaderWidgetLoader
+        active: shellRoot.woke(12) && shellRoot.widgetsAllowed && ((DownloaderService.loaded && DownloaderService.shown && !downloaderGate.gone) || EditMode.active || shellRoot.downloaderResetRequested)
+        DownloaderWidget {}
+    }
+
     // The lyrics (modules/sekai/desktopWidgets/LyricsWidget.qml): the words of the song that is
     // playing, sung along on the desktop with no card behind them. Off until you add it.
     FocusGate {
@@ -1105,9 +1163,10 @@ ShellRoot {
         }
     }
 
-    // The lyrics source picker (modules/sekai/desktopWidgets/LyricsSources.qml): built only while open.
+    // The lyrics source picker (modules/sekai/desktopWidgets/LyricsSources.qml): built only while open
+    // (and for the moment its card takes to pop away).
     LazyLoader {
-        active: LyricsService.pickerOpen
+        active: LyricsService.pickerOpen || LyricsService.pickerLinger
         LyricsSources {}
     }
 
@@ -1178,6 +1237,9 @@ ShellRoot {
         function toggle(): void { UserCardService.setShown(!UserCardService.shown) }
         function show(): void { UserCardService.setShown(true) }
         function hide(): void { UserCardService.setShown(false) }
+        // The card's size: 2x2 (the clock / weather card footprint) or 1x1 (only the avatar).
+        function size(mode: string): void { UserCardService.setSize(mode) }
+        function toggleSize(): void { UserCardService.toggleSize() }
         function resetPosition(): void {
             shellRoot.userCardResetRequested = true
             if (userCardWidgetLoader.item) userCardWidgetLoader.item.resetPosition()
@@ -1193,6 +1255,9 @@ ShellRoot {
         function hide(): void { WeatherCardService.setShown(false) }
         // "minimal" or "classic" (anything else, the old "full" too, is "classic").
         function style(mode: string): void { WeatherCardService.setStyle(mode) }
+        // The card's size: 2x2 (both styles live in it) or 1x1 (only the temperature).
+        function size(mode: string): void { WeatherCardService.setSize(mode) }
+        function toggleSize(): void { WeatherCardService.toggleSize() }
         // Ask Open-Meteo again now (only does something while the card is on screen).
         function refresh(): void { if (weatherCardWidgetLoader.item) weatherCardWidgetLoader.item.refresh() }
         function resetPosition(): void {
@@ -1244,7 +1309,7 @@ ShellRoot {
         function toggle(): void { CalendarCardService.setShown(!CalendarCardService.shown) }
         function show(): void { CalendarCardService.setShown(true) }
         function hide(): void { CalendarCardService.setShown(false) }
-        // The card's size: 2x2 (the clock / user card / weather card footprint) or full.
+        // The card's size: 1x1 (day and date), 2x2 (the clock / user card / weather card footprint) or full.
         function size(mode: string): void { CalendarCardService.setSize(mode) }
         function toggleSize(): void { CalendarCardService.toggleSize() }
         // An entry from a script: title, day (YYYY-MM-DD), time (HH:MM, or "" for all day),
@@ -1265,7 +1330,7 @@ ShellRoot {
         function toggle(): void { PaletteService.setShown(!PaletteService.shown) }
         function show(): void { PaletteService.setShown(true) }
         function hide(): void { PaletteService.setShown(false) }
-        // The card's size: 2x2 (the clock / user card / weather card footprint) or full.
+        // The card's size: 1x1 (a fan of the five colours), 2x2 (the clock / user card / weather card footprint) or full.
         function size(mode: string): void { PaletteService.setSize(mode) }
         function toggleSize(): void { PaletteService.toggleSize() }
         // A new random strip. Only the palette's own colours change, never the theme.
@@ -1276,6 +1341,89 @@ ShellRoot {
             WidgetClones.clearAll("palettecard")
             shellRoot.paletteCardResetRequested = false
         }
+    }
+
+    IpcHandler {
+        target: "downloader"
+        function toggle(): void { DownloaderService.setShown(!DownloaderService.shown) }
+        function show(): void { DownloaderService.setShown(true) }
+        function hide(): void { DownloaderService.setShown(false) }
+        // Download the link on the clipboard (bind it to a key).
+        function paste(): void { DownloaderService.paste() }
+        // Download a link: `ipc call downloader get https://...`.
+        function get(link: string): void { DownloaderService.submit(link) }
+        // Stop the running download and empty the queue.
+        function cancel(): void { DownloaderService.cancelAll() }
+        // What to save: video, audio or mute.
+        function mode(what: string): void { DownloaderService.setMode(what) }
+        function cycleMode(): void { DownloaderService.cycleMode() }
+        // How good: max, 1080, 720 or 480.
+        function quality(q: string): void { DownloaderService.setQuality(q) }
+        // The sound format for audio: mp3, opus, m4a, flac, wav or best.
+        function audio(format: string): void { DownloaderService.setAudioFormat(format) }
+        // What does the work: auto, ytdlp, gallerydl or cobalt.
+        function engine(which: string): void { DownloaderService.setEngine(which) }
+        // Whose login to use for Instagram and the like: firefox, chrome, chromium, brave, edge,
+        // vivaldi, opera, or "" for none.
+        function cookies(browser: string): void { DownloaderService.setCookies(browser) }
+        // A cookies.txt file to use instead of a browser's login.
+        function cookiesFile(path: string): void { DownloaderService.setCookiesFile(path) }
+        // The language to save subtitles in (en, pt-BR ...), or "" for none.
+        function subs(lang: string): void { DownloaderService.setSubs(lang) }
+        // How files are named: basic, pretty, classic or nerdy.
+        function names(style: string): void { DownloaderService.setNames(style) }
+        // A post with several items: ask which ones to save (at 2 x 2).
+        function ask(on: bool): void { DownloaderService.setAskWhich(on) }
+        // Where files go ("" = your Downloads folder).
+        function folder(path: string): void { DownloaderService.setFolder(path) }
+        // Open that folder.
+        function open(): void { DownloaderService.openFolder() }
+        // Empty the list of finished downloads (the files stay).
+        function clear(): void { DownloaderService.clearFinished() }
+        // One line of how things are.
+        function status(): string { return DownloaderService.statusText() }
+        // The widget's size: 1x1 (one key) or 2x2.
+        function size(mode: string): void { DownloaderService.setSize(mode) }
+        function toggleSize(): void { DownloaderService.toggleSize() }
+        function resetPosition(): void {
+            shellRoot.downloaderResetRequested = true
+            if (downloaderWidgetLoader.item) downloaderWidgetLoader.item.resetPosition()
+            shellRoot.downloaderResetRequested = false
+        }
+    }
+
+    IpcHandler {
+        target: "watertank"
+        function toggle(): void { WaterTankService.setShown(!WaterTankService.shown) }
+        function show(): void { WaterTankService.setShown(true) }
+        function hide(): void { WaterTankService.setShown(false) }
+        // One glass of water (`ipc call watertank add`), or several (`ipc call watertank addMany 2`).
+        function add(): void { WaterTankService.addGlass(1) }
+        function addMany(n: int): void { WaterTankService.addGlass(n > 0 ? n : 1) }
+        // Take a glass back.
+        function remove(): void { WaterTankService.removeGlass() }
+        // Today's count back to 0 (the earlier days stay).
+        function reset(): void { WaterTankService.resetToday() }
+        // The goal, in glasses a day (1 to 20).
+        function goal(glasses: int): void { WaterTankService.setGoal(glasses) }
+        // The size of a glass, in ml (100 to 1000, in steps of 50).
+        function glass(ml: int): void { WaterTankService.setGlassMl(ml) }
+        // The widget's size: 1x1 (one glass you tap) or 2x2.
+        function size(mode: string): void { WaterTankService.setSize(mode) }
+        function toggleSize(): void { WaterTankService.toggleSize() }
+        function resetPosition(): void {
+            shellRoot.waterTankResetRequested = true
+            if (waterTankWidgetLoader.item) waterTankWidgetLoader.item.resetPosition()
+            shellRoot.waterTankResetRequested = false
+        }
+    }
+
+    IpcHandler {
+        target: "screentime"
+        // Today so far, e.g. "3h 12m" (`ipc call screentime status`).
+        function status(): string { return ScreenTimeService.longText }
+        // Today back to 0 (the earlier days stay).
+        function reset(): void { ScreenTimeService.resetToday() }
     }
 
     IpcHandler {

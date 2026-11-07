@@ -20,7 +20,8 @@ for (const c of cards) {
   const svc = read(`services/${c.svc}.qml`);
   const w = read(c.file);
   ok(/property string size: "full"/.test(svc) && /readonly property bool small: root\.size === "2x2"/.test(svc), `${c.name}: service has size (default full) and small`);
-  ok(/size: root\.size/.test(svc) && /root\.size = s\.size === "2x2" \? "2x2" : "full"/.test(svc), `${c.name}: size is saved and restored (anything odd -> full)`);
+  const restores = c.name === "todo" ? /root\.size = s\.size === "2x2" \? "2x2" : "full"/ : /root\.size = \(s\.size === "2x2" \|\| s\.size === "1x1"\) \? s\.size : "full"/;
+  ok(/size: root\.size/.test(svc) && restores.test(svc), `${c.name}: size is saved and restored (anything odd -> full)`);
   ok(/function setSize\(value\)/.test(svc) && /function toggleSize\(\)/.test(svc), `${c.name}: setSize / toggleSize exist`);
   ok(new RegExp(`${c.svc}\\.small`).test(w), `${c.name}: widget follows ${c.svc}.small`);
   ok(/SizeKey \{\s*shown: chrome\.selected/.test(w) && new RegExp(`${c.svc}\\.toggleSize\\(\\)`).test(w), `${c.name}: size key shows while selected and toggles`);

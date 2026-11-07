@@ -107,3 +107,16 @@ hl.layer_rule({ name = "sekaipop-no-anim", match = { namespace = "^sekaipop-" },
 hl.layer_rule({ match = { namespace = "gtk4-layer-shell" }, no_anim = true})
 hl.layer_rule({ match = { namespace = "hyprpicker" }, no_anim = true})
 hl.layer_rule({ match = { namespace = "selection" }, no_anim = true})
+
+-- The phone mirror (sekaipop/services/PhoneMirrorService.qml). The embedded scrcpy window is
+-- never seen: the shell parks it off every monitor, then pins it under the phone's screen.
+-- Keep it floating, unfocused at first, and without animation, blur or shadow.
+hl.window_rule({match = {title = "^(sekai-phone-embed)$" }, float = true})
+hl.window_rule({match = {title = "^(sekai-phone-embed)$" }, move = {99000, 99000}})
+hl.window_rule({match = {title = "^(sekai-phone-embed)$" }, no_initial_focus = true})
+hl.window_rule({match = {title = "^(sekai-phone-embed)$" }, no_anim = true})
+hl.window_rule({match = {title = "^(sekai-phone-embed)$" }, no_blur = true})
+hl.window_rule({match = {title = "^(sekai-phone-embed)$" }, no_shadow = true})
+-- The small window that shows the phone's lock screen so a PIN can be typed.
+hl.window_rule({match = {title = "^(sekai-phone-unlock)$" }, float = true})
+hl.window_rule({match = {title = "^(sekai-phone-unlock)$" }, center = true})

@@ -23,7 +23,7 @@ can be shown or hidden with a key. Issue [#61](https://github.com/Blapples/Sekai
 
 - The pointer is on the bar, or on the line along the very edge (3 px at 100 % scale)
   that brings it out.
-- One of its popups is open: tray dropdown or menu, battery, CPU & RAM, calendar,
+- One of its popups is open: tray dropdown or menu, battery, CPU & RAM, screen time, calendar,
   weather, media, equalizer, Discord, utility keys. It stays out until the popup closes.
 - Edit Desktop is open on that monitor (the bar is part of the card there).
 - For 2 s after `ipc call bar peek`.

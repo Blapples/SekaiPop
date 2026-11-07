@@ -10,12 +10,18 @@ import qs.modules.sekai.phone
 // README). Pure UI: QuickPanel.qml feeds it `networks` (from
 // QuickSource.qml's nmcli poll) and turns its signals into nmcli calls.
 //
-// Tapping an open, unconnected network connects straight away. Tapping
-// a secured one expands a password field in place — Enter or the
-// "Connect" button sends it. Tapping the already-connected network
-// disconnects it. The header's "Scan" button forces a fresh
-// `nmcli device wifi rescan`, which is slow enough (a couple of
-// seconds) that it's opt-in rather than run every time this opens.
+// Tapping an open, unconnected network connects straight away, and so
+// does tapping a secured one that is already saved (NetworkManager has
+// its password). Tapping a secured network that is not saved yet
+// expands a password field in place — Enter or the "Connect" button
+// sends it. Tapping the already-connected network disconnects it.
+// Right-clicking a saved network slides a Forget button (delete the
+// saved profile) in beside it; click again to put it away.
+// Opening this shows the networks NetworkManager already knows at
+// once and starts a fresh `nmcli device wifi rescan` in the
+// background; the list is read again every second for a few seconds,
+// so new networks appear as they are found. The header's "Scan"
+// button runs the same thing again if you want another sweep.
 Item {
     id: root
 
@@ -23,16 +29,14 @@ Item {
     readonly property var mt: Theme.of(QsWindow.window)
 
     property bool open: false
-    property var networks: []          // [{ssid, signal, secured, connected}]
+    property var networks: []          // [{ssid, signal, secured, connected, saved}]
     property bool scanning: false
-    // True only while a scan the "Scan" button itself asked for is in
-    // flight — separate from `scanning`, which also goes true for the
-    // quiet fetch this dialog fires on its own once it opens and (see
-    // QuickSource.qml's wifiLiveRefresh) every few seconds after that
-    // to keep the list live. The button used to bind straight to
-    // `scanning`, so it visibly flashed into "Scanning…" and back on
-    // its own on every one of those background refreshes — looking
-    // like it was refreshing itself even when nobody touched it.
+    // True while a rescan is running: from the moment this opens (or
+    // "Scan" is pressed) until the last read of that rescan, a few
+    // seconds. Separate from `scanning`, which also goes true for every
+    // quiet background read (see QuickSource.qml's wifiLiveRefresh) —
+    // the button used to bind straight to `scanning`, so it flashed
+    // into "Scanning…" on its own on every one of those refreshes.
     property bool manualScanning: false
     property string connectingSsid: "" // which row is mid-connect, if any
     property string errorText: ""
@@ -42,6 +46,7 @@ Item {
     signal advancedRequested()
     signal connectRequested(string ssid, string password)
     signal disconnectRequested(string ssid)
+    signal forgetRequested(string ssid)
 
     anchors.fill: parent
     // Only worth hit-testing (and only shows up in the phone's texture
@@ -58,10 +63,17 @@ Item {
     // Which row (if any) has its password field expanded. Cleared on
     // close, and if a rescan drops that network from the list.
     property string expandedSsid: ""
-    onOpenChanged: if (!open) expandedSsid = ""
+    // Which row (if any) is showing its Forget button. Same clearing rules.
+    property string forgetSsid: ""
+    onOpenChanged: if (!open) {
+        expandedSsid = ""
+        forgetSsid = ""
+    }
     onNetworksChanged: {
         if (expandedSsid !== "" && !networks.some(n => n.ssid === expandedSsid))
             expandedSsid = ""
+        if (forgetSsid !== "" && !networks.some(n => n.ssid === forgetSsid))
+            forgetSsid = ""
     }
 
     // Same dimming glass PowerMenuScrim uses (inset to the visible
@@ -126,7 +138,7 @@ Item {
             font.styleName: mt.fontStyleBold
         }
 
-        // "Scan" — forces the slow rescan+list path. A plain text pill
+        // "Scan" — another rescan sweep. A plain text pill
         // rather than a hand-drawn refresh glyph: one less icon this
         // project has to ship and keep legible at this size.
         Rectangle {
@@ -227,6 +239,24 @@ Item {
 
                 readonly property bool expanded: root.expandedSsid === modelData.ssid
                 readonly property bool busy: root.connectingSsid === modelData.ssid
+                // A network NetworkManager already knows (saved) or is on (connected) never
+                // needs a password typed; anything else may.
+                readonly property bool hasActions: modelData.saved === true || modelData.connected
+                // Only a saved network has a profile to forget.
+                readonly property bool forgetOpen: modelData.saved === true && root.forgetSsid === modelData.ssid
+
+                // 0 -> 1 as the Forget button comes in. One value drives the button's slide, fade
+                // and scale and the row text making room for it, so they always move together.
+                readonly property int forgetW: 84
+                property real reveal: forgetOpen ? 1 : 0
+                readonly property real forgetShift: (forgetW + 10) * Math.min(reveal, 1)
+                Behavior on reveal {
+                    NumberAnimation {
+                        duration: row.forgetOpen ? 320 : 200
+                        easing.type: row.forgetOpen ? Easing.OutBack : Easing.InCubic
+                        easing.overshoot: 1.3
+                    }
+                }
 
                 // Same forceActiveFocus() pattern Overview.qml's
                 // search box uses — a plain `focus: expanded` binding
@@ -278,7 +308,7 @@ Item {
                 Text {
                     x: 46
                     y: 10
-                    width: parent.width - 46 - 40
+                    width: parent.width - 46 - 40 - row.forgetShift
                     elide: Text.ElideRight
                     text: row.modelData.ssid
                     color: mt.pInk
@@ -292,7 +322,8 @@ Item {
                     x: 46
                     y: 34
                     text: row.busy ? "Connecting…"
-                        : row.modelData.connected ? "Connected — tap to disconnect"
+                        : row.modelData.connected ? "Connected"
+                        : row.modelData.saved === true ? "Saved"
                         : row.modelData.secured ? "Secured"
                         : "Open"
                     color: mt.pInkSub
@@ -302,7 +333,7 @@ Item {
 
                 MaterialIcon {
                     visible: row.modelData.secured
-                    x: parent.width - 40
+                    x: parent.width - 40 - row.forgetShift
                     y: 20
                     size: 20
                     name: "lock"
@@ -316,13 +347,69 @@ Item {
                     hoverEnabled: true
                     enabled: !row.busy
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: {
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: mouse => {
+                        if (mouse.button === Qt.RightButton) {
+                            // only a saved network has something to forget
+                            if (row.modelData.saved === true)
+                                root.forgetSsid = row.forgetOpen ? "" : row.modelData.ssid
+                            return
+                        }
+                        root.forgetSsid = ""
                         if (row.modelData.connected) {
                             root.disconnectRequested(row.modelData.ssid)
-                        } else if (row.modelData.secured) {
-                            root.expandedSsid = row.expanded ? "" : row.modelData.ssid
-                        } else {
+                        } else if (row.modelData.saved === true || !row.modelData.secured) {
+                            // saved: NetworkManager has the password, nothing to type
+                            root.expandedSsid = ""
                             root.connectRequested(row.modelData.ssid, "")
+                        } else {
+                            root.expandedSsid = row.expanded ? "" : row.modelData.ssid
+                        }
+                    }
+                }
+
+                // Forget: slides in from the right edge (fade + a little scale) when the row is
+                // right-clicked, and slides back out when it is dismissed. Declared after the
+                // row's MouseArea so it sits on top and gets its own clicks.
+                Rectangle {
+                    id: forgetPill
+                    visible: row.reveal > 0.01
+                    x: row.width - row.forgetW - 14 + 36 * (1 - row.reveal)
+                    y: 14
+                    width: row.forgetW
+                    height: 36
+                    radius: 18
+                    opacity: Math.min(row.reveal, 1)
+                    scale: 0.82 + 0.18 * row.reveal
+                    transformOrigin: Item.Right
+                    color: forgetArea.containsMouse ? "#c0392b" : mt.pSurface
+                    border.width: 2
+                    border.color: forgetArea.containsMouse ? "#c0392b" : mt.pLine
+                    antialiasing: true
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: 120
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Forget"
+                        color: forgetArea.containsMouse ? "#ffffff" : "#c0392b"
+                        font.family: mt.fontFamily
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                    }
+
+                    MouseArea {
+                        id: forgetArea
+                        anchors.fill: parent
+                        enabled: row.forgetOpen
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.forgetSsid = ""
+                            root.forgetRequested(row.modelData.ssid)
                         }
                     }
                 }
@@ -412,9 +499,9 @@ Item {
         }
 
         Text {
-            visible: root.networks.length === 0 && !root.scanning
+            visible: root.networks.length === 0 && (root.manualScanning || !root.scanning)
             anchors.centerIn: list
-            text: "No networks found"
+            text: root.manualScanning ? "Looking for networks…" : "No networks found"
             color: mt.pInkSub
             font.family: mt.fontFamily
             font.pixelSize: 16

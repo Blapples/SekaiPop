@@ -454,8 +454,12 @@ PanelWindow {
                 // same card, not another one: the same keys (so still exactly one Apply and one
                 // Undo), with the note and the favourites left out and the swatches smaller.
                 readonly property bool small: PaletteService.small
-                readonly property int contentW: card.small ? 286 : 396
-                readonly property int contentH: card.small ? 238 : col.implicitHeight
+                // The 1 x 1 size is a quarter of the 2 x 2: 120 x 94 of content, 154 x 132 with
+                // the housing, which is not drawn at 1 x 1. It is a keycap with a fan of the five
+                // colours (PaletteTile.qml); a click shuffles.
+                readonly property bool tiny: PaletteService.tiny
+                readonly property int contentW: card.tiny ? 120 : (card.small ? 286 : 396)
+                readonly property int contentH: card.tiny ? 94 : (card.small ? 238 : col.implicitHeight)
                 readonly property int inset: mt.borderWidth + mt.outerRingWidth + 10
 
                 width: card.contentW + card.inset * 2
@@ -483,7 +487,9 @@ PanelWindow {
 
                 // The housing: the same navy outline / pale ring / surface fill / hard shadow
                 // as the bar, the dock, the To-Do card and the clock.
+                // Not drawn at 1 x 1: that size is one bare object on the wallpaper (TinyFoot.qml).
                 Pill {
+                    visible: !card.tiny
                     anchors.fill: parent
                     cornerRadius: mt.radiusOuter
                     ringWidth: mt.borderWidth + mt.outerRingWidth
@@ -515,6 +521,8 @@ PanelWindow {
                     z: 1
                     anchors.fill: parent
                     acceptedButtons: Qt.LeftButton
+                    // The 1 x 1 fan opens a little when pointed at.
+                    hoverEnabled: card.tiny
                     cursorShape: EditMode.desktopDragAllowed || chrome.selected
                         ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.ArrowCursor
 
@@ -535,19 +543,51 @@ PanelWindow {
 
                     // A click on the bare card takes the keyboard (for Space).
                     onPressed: card.forceActiveFocus()
+
+                    // At 1 x 1 the whole tile is the shuffle key (a drag is not a click, so it
+                    // still moves the card).
+                    onClicked: {
+                        if (card.tiny)
+                            PaletteService.shuffle()
+                    }
                 }
 
-                // Edit Desktop: flip between FULL and 2 x 2 (only while the card is selected).
+                // Edit Desktop: step through FULL, 2 x 2 and 1 x 1 (only while the card is selected).
                 SizeKey {
                     shown: chrome.selected
-                    small: card.small
+                    small: card.tiny
+                    label: "SIZE  " + (card.tiny ? "1 x 1" : (card.small ? "2 x 2" : "FULL"))
                     onToggled: PaletteService.toggleSize()
+                }
+
+                // ===== the 1 x 1 face =====
+                Loader {
+                    id: tinyLoader
+                    z: 2
+                    x: card.inset
+                    y: card.inset
+                    active: card.tiny
+                    sourceComponent: tinyFace
+                }
+
+                Component {
+                    id: tinyFace
+
+                    PaletteTile {
+                        width: card.contentW
+                        height: card.contentH
+                        colors: PaletteService.colors
+                        locks: PaletteService.locks
+                        hover: dragArea.containsMouse
+                        pressed: dragArea.pressed
+                    }
                 }
 
                 // ===== the content =====
                 Item {
                     id: content
                     z: 2
+                    visible: !card.tiny
                     x: card.inset
                     y: card.inset
                     width: card.contentW

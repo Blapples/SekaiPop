@@ -410,3 +410,16 @@ function cleanFavorites(list) {
     }
     return out.slice(0, 48)
 }
+
+// A preset holds the custom palette's five colours only when it wears the "custom" theme
+// (a preset on another theme must not carry, or later overwrite, the custom colours).
+// presetCustom: what to save, [five #rrggbb] or null. wearCustom: what to put back from a
+// saved preset, or null (an older preset has no colours: it keeps the current ones).
+function presetCustom(group, colors) {
+    return group === "custom" ? parse(colors) : null
+}
+
+function wearCustom(group, saved) {
+    return group === "custom" ? parse(saved) : null
+}
+

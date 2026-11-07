@@ -163,7 +163,7 @@ function same(a, b) {
 // desktop does not start every widget's clock, fetch and first frame in the same
 // frame. Index = position in the sequence; one step is STAGGER_MS.
 var STAGGER_MS = 70
-var SLOTS = { clock: 0, usercard: 1, weathercard: 2, todo: 3, visualizer: 4, image: 5, notes: 6, calendarcard: 7, palettecard: 8, lyrics: 9 }
+var SLOTS = { clock: 0, usercard: 1, weathercard: 2, todo: 3, visualizer: 4, image: 5, notes: 6, calendarcard: 7, palettecard: 8, lyrics: 9, watertank: 10, downloader: 11 }
 
 function slotDelay(id) {
     var s = SLOTS[id]

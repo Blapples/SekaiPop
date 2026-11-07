@@ -2,7 +2,7 @@
 const fs = require("fs")
 const locate = require("../lib/locate.js")
 const src = fs.readFileSync(locate("modules/common/functions/DisplayMath.js"), "utf8").replace(".pragma library", "")
-const D = new Function(src + "; return { SCALES, parseModes, matchMode, modeById, logicalSize, placeOf, positions, spec, resolutions, currentRes, rates, modeForRes, overlaps, snap, separate, dock, reflow, normalize, touches, unlinked, view }")()
+const D = new Function(src + "; return { SCALES, parseModes, matchMode, modeById, logicalSize, placeOf, positions, spec, resolutions, currentRes, rates, modeForRes, overlaps, snap, separate, dock, reflow, normalize, touches, unlinked, view, parseKnown, mergeKnown, mismatched }")()
 
 let fails = 0
 function eq(a, b, msg) {
@@ -117,6 +117,19 @@ const V = D.view([M, rc("S", 1920, 0, 1280, 720)], 600, 200)
 eq(V.scale > 0 && V.scale <= 200 / 1080, true, "scale fits the box")
 eq(Math.round(V.ox + 0 * V.scale) >= 0 && Math.round(V.ox + 3200 * V.scale) <= 600, true, "the screens sit inside the box")
 eq(D.view([], 100, 100), { scale: 1, ox: 0, oy: 0 }, "no screens")
+
+// screens Hyprland does not list
+eq(D.parseKnown("HDMI-A-1|1920x1080\neDP-1|\n\nbad name|1x1\n"), [{ name: "HDMI-A-1", w: 1920, h: 1080 }, { name: "eDP-1", w: 0, h: 0 }], "known screens")
+const hy = [{ name: "eDP-1", on: true, modes: [] }]
+const mg = D.mergeKnown(hy, D.parseKnown("eDP-1|1920x1080\nHDMI-A-1|1920x1080"))
+eq(mg.map(m => m.name), ["eDP-1", "HDMI-A-1"], "a screen Hyprland does not list is added")
+eq(mg[1].on, false, "added as off")
+eq(mg[1].hint, { w: 1920, h: 1080 }, "with the panel size to draw it by")
+eq(mg[0].hint, undefined, "a listed screen is left alone")
+eq(D.mergeKnown(hy, []).length, 1, "nothing known, nothing added")
+eq(D.mismatched([{ name: "A", on: false }, { name: "B", on: true }], [{ name: "A", on: true }, { name: "B", on: true }]).map(d => d.name), ["A"], "off wanted, still on")
+eq(D.mismatched([{ name: "A", on: true }], [{ name: "A", on: true }]), [], "as wanted")
+eq(D.mismatched([{ name: "A", on: true }], []), [], "not listed: nothing to compare")
 
 console.log(fails === 0 ? "display tests: all passed" : fails + " failed")
 process.exit(fails ? 1 : 0)

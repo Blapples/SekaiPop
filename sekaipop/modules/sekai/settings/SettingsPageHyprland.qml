@@ -629,6 +629,17 @@ SettingsPage {
         }
 
         Text {
+            visible: DisplayService.problem !== ""
+            width: displayCard.innerWidth
+            wrapMode: Text.WordWrap
+            text: DisplayService.problem
+            color: mt.pInk
+            font.family: mt.fontFamily
+            font.pixelSize: 16
+            font.weight: Font.ExtraBold
+        }
+
+        Text {
             visible: DisplayService.enabledCount > 1
             width: displayCard.innerWidth
             wrapMode: Text.WordWrap

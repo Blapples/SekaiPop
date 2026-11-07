@@ -238,3 +238,33 @@ function problems(entries) {
     }
     return out
 }
+
+// ===== bar pills =====
+// The same rule for the bar as for the widgets: a preset wears what it holds. A preset
+// saves the list of bar modules the shell had when it was saved (`bar.modules`); a pill
+// that is not in that list did not exist for it, so it is worn OFF, whatever the Settings
+// Panel's switch for that pill is now. A preset saved before the list existed holds
+// BarLayoutService.legacyModules instead (the pills there were then).
+
+// The preset's Settings Panel part as it is worn: the same keys, plus `bar.<id>: false` for
+// every pill the preset did not know. Only for a pill that is on by default (one that is off
+// by default is already off, and the Settings Panel holds only what differs from a default).
+function withBarOff(settings, known, allIds, defaults) {
+    var out = Object.assign({}, settings)
+    for (var i = 0; i < allIds.length; i++) {
+        var key = "bar." + allIds[i]
+        if (known.indexOf(allIds[i]) < 0 && defaults[key] === true)
+            out[key] = false
+    }
+    return out
+}
+
+// The bar part without its list of modules (what is compared, not what is worn).
+function barNoModules(bar) {
+    if (!isObj(bar))
+        return bar
+    var out = Object.assign({}, bar)
+    delete out.modules
+    return out
+}
+

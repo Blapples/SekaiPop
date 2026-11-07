@@ -665,8 +665,11 @@ PanelWindow {
                 // The same footprint as the clock's KEYS card: its content is
                 // 286 x 238, and the housing adds the inset on every side plus
                 // the hard shadow underneath.
-                readonly property int contentW: 286
-                readonly property int contentH: 238
+                // The 1 x 1 size (WeatherCardService.size) is a quarter of it: 120 x 94 of content,
+                // 154 x 132 with the housing. It shows only the temperature (WeatherTile.qml).
+                readonly property bool tiny: WeatherCardService.tiny
+                readonly property int contentW: card.tiny ? 120 : 286
+                readonly property int contentH: card.tiny ? 94 : 238
                 readonly property int inset: mt.borderWidth + mt.outerRingWidth + 10
 
                 width: card.contentW + card.inset * 2
@@ -691,7 +694,9 @@ PanelWindow {
 
                 // The housing: the same navy outline / pale ring / surface fill /
                 // hard shadow as the bar, the dock, the To-Do card and the clock.
+                // Not drawn at 1 x 1: that size is one bare object on the wallpaper (TinyFoot.qml).
                 Pill {
+                    visible: !card.tiny
                     anchors.fill: parent
                     cornerRadius: mt.radiusOuter
                     ringWidth: mt.borderWidth + mt.outerRingWidth
@@ -724,6 +729,8 @@ PanelWindow {
                     z: 1
                     anchors.fill: parent
                     acceptedButtons: Qt.LeftButton
+                    // The 1 x 1 keycap lights up when pointed at.
+                    hoverEnabled: card.tiny
                     cursorShape: EditMode.desktopDragAllowed || chrome.selected
                         ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.ArrowCursor
 
@@ -749,11 +756,22 @@ PanelWindow {
 
                 // Edit Desktop: flip between the classic and the minimal style (only while the
                 // card is selected). The key shows the look it will switch TO.
+                // (Not at 1 x 1: that size has no styles.)
                 SizeKey {
-                    shown: chrome.selected
+                    shown: chrome.selected && !card.tiny
                     icon: win.minimal ? "dashboard" : "crop_square"
                     label: "STYLE  " + (win.minimal ? "MINIMAL" : "CLASSIC")
                     onToggled: WeatherCardService.toggleStyle()
+                }
+
+                // Edit Desktop: flip between 2 x 2 and 1 x 1 (only while the card is selected).
+                // Under the style key; it takes the top place when the style key is not there.
+                SizeKey {
+                    shown: chrome.selected
+                    row: card.tiny ? 0 : 1
+                    small: card.tiny
+                    label: "SIZE  " + (card.tiny ? "1 x 1" : "2 x 2")
+                    onToggled: WeatherCardService.toggleSize()
                 }
 
                 // ===== the content =====
@@ -769,13 +787,33 @@ PanelWindow {
                     // Only the one in use is built (the other is not even created), so the minimal
                     // card is also the lighter one. Style: WeatherCardService.style.
                     Loader {
-                        active: !win.minimal
+                        active: !win.minimal && !card.tiny
                         sourceComponent: classicFace
                     }
 
                     Loader {
-                        active: win.minimal
+                        active: win.minimal && !card.tiny
                         sourceComponent: minimalFace
+                    }
+
+                    // The 1 x 1 size: only the temperature. Style does not apply to it.
+                    Loader {
+                        active: card.tiny
+                        sourceComponent: tinyFace
+                    }
+
+                    Component {
+                        id: tinyFace
+
+                        WeatherTile {
+                            width: card.contentW
+                            height: card.contentH
+                            num: win.hasData ? win.temp.num : "--"
+                            unit: win.hasData ? win.temp.unit : ""
+                            icon: win.hasData ? wx.iconName : ""
+                            hover: dragArea.containsMouse
+                            pressed: dragArea.pressed
+                        }
                     }
 
                     // ===== the classic style =====

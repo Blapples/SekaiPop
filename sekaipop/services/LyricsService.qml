@@ -291,7 +291,19 @@ Singleton {
         return p ? p.name : String(id)
     }
 
+    // True for the moment after it is closed, so the window stays up while the card pops away.
+    property bool pickerLinger: false
+
+    Timer {
+        id: pickerLingerTimer
+        interval: 300
+        repeat: false
+        onTriggered: root.pickerLinger = false
+    }
+
     function openPicker(screenName, x, y) {
+        pickerLingerTimer.stop()
+        root.pickerLinger = false
         root.pickerScreen = screenName !== "" ? screenName : root.screenName
         root.pickerX = x === undefined ? -1 : x
         root.pickerY = y === undefined ? -1 : y
@@ -299,6 +311,12 @@ Singleton {
     }
 
     function closePicker() {
+        if (!root.pickerOpen)
+            return
+        // The linger first: the shell's loader keeps the window only while one of the two is
+        // true, and it looks the moment `pickerOpen` changes.
+        root.pickerLinger = true
+        pickerLingerTimer.restart()
         root.pickerOpen = false
     }
 
