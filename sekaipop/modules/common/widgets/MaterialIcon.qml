@@ -53,7 +53,9 @@ Text {
     height: drawSize
     text: root.attempt >= root.solarFiles.length ? name : ""
     color: mt.classicFor(root) ? mt.pInk : mt.ink
-    clip: true
+    // SVG icons already fit their bounds. Clipping their image child can hide
+    // them during the phone animation; retain clipping for the font fallback.
+    clip: root.text !== ""
 
     horizontalAlignment: Text.AlignHCenter
     verticalAlignment: Text.AlignVCenter
