@@ -2360,6 +2360,12 @@ Scope {
             // eyes) unless the Settings have settled in its place.
             readonly property bool quickInput: !(root.settingsOpen && flip >= 1 && !flipping)
 
+            // What the window's input region is made of (hitRect, railHost). The window stays
+            // mapped once it has been shown, and those rectangles are pinned to the phone's
+            // resting spot, so while the phone is down they must be empty or they swallow
+            // every click in that part of the screen.
+            readonly property bool takesMouse: quickInput && win.shown
+
             // The Quick Panel's phone during the turn: its size, how
             // opaque it is, and where its screen's middle is, going from where
             // it stands to the middle of the monitor (this item's coordinates).
@@ -2491,8 +2497,8 @@ Scope {
                 // (The side buttons stand out of the right edge, past the padded box
                 // (2D: the flat Power button, bigger), so the box takes the mouse that
                 // far too.)
-                width: stage.quickInput ? restRect.width + (root.flat2d ? phone.powerStick : phone.buttonStick) * win.fit : 0
-                height: stage.quickInput ? Math.max(0, restRect.height - drop) : 0
+                width: stage.takesMouse ? restRect.width + (root.flat2d ? phone.powerStick : phone.buttonStick) * win.fit : 0
+                height: stage.takesMouse ? Math.max(0, restRect.height - drop) : 0
             }
 
             // Click away inside hitRect: hitRect is the box around the tilted phone, so
@@ -2969,8 +2975,8 @@ Scope {
                     x: win.railMinX * win.fit
                     y: win.railMinY * win.fit - root.bounce * win.fit
                        + root.lowLift
-                    width: stage.quickInput ? (win.railMaxX - win.railMinX) * win.fit : 0
-                    height: stage.quickInput ? (win.railMaxY - win.railMinY) * win.fit + root.bounce * win.fit * 2 : 0
+                    width: stage.takesMouse ? (win.railMaxX - win.railMinX) * win.fit : 0
+                    height: stage.takesMouse ? (win.railMaxY - win.railMinY) * win.fit + root.bounce * win.fit * 2 : 0
                 }
 
                 Item {
