@@ -119,11 +119,18 @@ if [ "$RESTORE_KITTY" = 1 ]; then
     exit 0
 fi
 
+if [ "$RESTORE" = 1 ] && [ "$HYPR" = skip ]; then
+    echo "--restore cannot be combined with --hypr skip." >&2
+    exit 2
+fi
+
 # Anything left from when SekaiPop was called pjsekai (settings, presets, app-colour blocks, the
-# Hyprland overrides file and backups) is moved to the new name first. Does nothing otherwise.
+# Hyprland overrides file and backups) is moved to the new name first, respecting --hypr skip.
 if [ -f "$HERE/sekaipop/scripts/system/migrate-from-pjsekai.sh" ]; then
-    if [ "$DRY" = 1 ]; then sh "$HERE/sekaipop/scripts/system/migrate-from-pjsekai.sh" --dry-run
-    else sh "$HERE/sekaipop/scripts/system/migrate-from-pjsekai.sh"; fi
+    MIGRATE_FLAGS=()
+    [ "$DRY" = 1 ] && MIGRATE_FLAGS+=(--dry-run)
+    [ "$HYPR" = skip ] && MIGRATE_FLAGS+=(--skip-hypr)
+    sh "$HERE/sekaipop/scripts/system/migrate-from-pjsekai.sh" "${MIGRATE_FLAGS[@]}"
 fi
 
 # ------------------------------------------------------------------ --restore
@@ -421,6 +428,7 @@ fi
 # A shell that is already running keeps the old files: the folder it watches was moved
 # aside, and a reload inside the same process can fail on Qt state left from them
 # ("FaceKey is not a type", issue #79). So it is restarted, as a new process.
+# Skip mode leaves the restart to the user because startup can write Hyprland overrides.
 shell_running() { have qs && ! qs list -p "$QS_DEST" 2>/dev/null | grep -q "No running instances"; }
 restart_shell() {
     setsid -f sh "$QS_DEST/scripts/system/restart-shell.sh" "$QS_DEST" >/dev/null 2>&1 && ok "shell restarted on the new files"
@@ -435,7 +443,7 @@ if [ "$DRY" = 0 ] && [ "$HYPR" = full ] && hypr_running; then
             setsid -f qs -c sekaipop >/dev/null 2>&1 && ok "shell started"
         fi
     fi
-elif [ "$DRY" = 0 ] && [ "$REPLACED" = 1 ] && shell_running; then
+elif [ "$DRY" = 0 ] && [ "$HYPR" != skip ] && [ "$REPLACED" = 1 ] && shell_running; then
     printf '\n'
     ask "The shell is running on the old files. Restart it now?" && restart_shell
 fi

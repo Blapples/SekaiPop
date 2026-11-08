@@ -3,8 +3,8 @@
 # One-time move from the old name ("pjsekai") to the new one ("sekaipop"). Safe to run again;
 # when there is nothing left of the old name it does nothing.
 #
-#   migrate-from-pjsekai.sh              do it
-#   migrate-from-pjsekai.sh --dry-run    only say what would be moved or rewritten
+#   --dry-run     only say what would be moved or rewritten
+#   --skip-hypr   leave Hyprland configs and backups alone
 #
 # install.sh runs it first thing. The Kitty helper recognises its old include separately.
 #
@@ -27,7 +27,14 @@
 #   To undo a rewrite, swap the words back: sed -i 's/sekaipop/pjsekai/g' <file>.
 
 dry=0
-[ "$1" = "--dry-run" ] && dry=1
+skip_hypr=0
+for option in "$@"; do
+    case "$option" in
+        --dry-run) dry=1 ;;
+        --skip-hypr) skip_hypr=1 ;;
+        *) echo "Unknown migration option: $option" >&2; exit 2 ;;
+    esac
+done
 
 cfg="${XDG_CONFIG_HOME:-$HOME/.config}"
 state="${XDG_STATE_HOME:-$HOME/.local/state}"
@@ -118,13 +125,22 @@ for d in "$cfg/sekaipop" "$state/sekaipop"; do
 done
 
 # 3. what was written into other programs' files ---------------------------------------------
-# names first (a file called pjsekai-colors.conf, a folder hypr.pjsekai-backup-...), then contents
-if [ -d "$cfg" ]; then
+# Hyprland's backups, names and contents share the same migration scope.
+if [ "$skip_hypr" = 0 ]; then
     for f in "$cfg"/hypr.pjsekai-backup-* "$cfg"/hypr.pjsekai-replaced-* \
-             "$cfg"/hypr.pjsekai-previous "$cfg"/kdeglobals.pjsekai-bak; do
+             "$cfg"/hypr.pjsekai-previous; do
         [ -e "$f" ] && rename "$f"
     done
-    for d in hypr foot fuzzel rofi fish gtk-3.0 gtk-4.0 qt5ct qt6ct matugen; do
+    if [ -d "$cfg/hypr" ]; then
+        foreach rename "$cfg/hypr" -maxdepth 3 -depth \( -name '*pjsekai*' -o -name '*Pjsekai*' \)
+        foreach rewrite "$cfg/hypr" -maxdepth 2 -type f \( -name '*.lua' -o -name '*.conf' \)
+    fi
+fi
+
+# Other programs' files still migrate in skip mode. Rename files before rewriting their references.
+if [ -d "$cfg" ]; then
+    [ -e "$cfg/kdeglobals.pjsekai-bak" ] && rename "$cfg/kdeglobals.pjsekai-bak"
+    for d in foot fuzzel rofi fish gtk-3.0 gtk-4.0 qt5ct qt6ct matugen; do
         [ -d "$cfg/$d" ] || continue
         foreach rename "$cfg/$d" -maxdepth 3 -depth \( -name '*pjsekai*' -o -name '*Pjsekai*' \)
     done
@@ -140,7 +156,6 @@ if [ -d "$cfg" ]; then
         [ -d "$cfg/$d" ] || continue
         foreach rewrite "$cfg/$d" -maxdepth 3 -type f -size -2M
     done
-    [ -d "$cfg/hypr" ] && foreach rewrite "$cfg/hypr" -maxdepth 2 -type f \( -name '*.lua' -o -name '*.conf' \)
     rewrite "$cfg/kdeglobals"
     rewrite "$cfg/kdeglobals.sekaipop-bak"
     for app in Code "Code - OSS" "Code - Insiders" VSCodium Cursor Windsurf; do

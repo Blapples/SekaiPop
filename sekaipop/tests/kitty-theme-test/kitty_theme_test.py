@@ -311,7 +311,42 @@ class KittyThemeTest(unittest.TestCase):
             shutil.copy(THEMING / name, scripts / name)
         self.install('--rice', rice, '--kitty', 'enable', '--dry-run')
         self.assertEqual(list(self.home.iterdir()), [rice])
+
+        config_home = self.home / 'config'
+        old_settings = self.put(config_home / 'pjsekai/settings.json', '{"theme":"pjsekai"}\n')
+        kde_backup = self.put(config_home / 'kdeglobals.pjsekai-bak', 'ColorScheme=PjsekaiA\n')
+        hypr_files = {
+            self.put(config_home / name, 'source = pjsekai_overrides.lua\n')
+            for name in ('hypr/hyprland.conf', 'hypr/pjsekai_overrides.lua', 'hypr/sekaipop_overrides.lua',
+                         'hypr.pjsekai-backup-20260101-000000/hyprland.conf',
+                         'hypr.pjsekai-replaced-20260101-000000/hyprland.conf',
+                         'hypr.pjsekai-previous/hyprland.conf')
+        }
+
+        def hypr_snapshot():
+            return {p: (p.read_bytes(), p.stat().st_mtime_ns)
+                    for folder in (config_home / 'hypr', *config_home.glob('hypr.*'))
+                    for p in folder.rglob('*') if p.is_file()}
+
+        original_hypr = hypr_snapshot()
+        self.assertEqual(set(original_hypr), hypr_files)
+        # Pretend a shell is running to catch any installer-initiated restart in skip mode.
+        qs = self.put(self.home / 'bin/qs', '#!/bin/sh\nprintf "%s\\n" "$*" >> "$HOME/qs-calls"\n')
+        qs.chmod(0o755)
+        self.env['PATH'] = f'{qs.parent}:{self.env["PATH"]}'
+        self.env['GSETTINGS_BACKEND'] = 'memory'
+        preview = self.install('--rice', rice, '--kitty', 'enable', '--dry-run')
+        self.assertIn(f'move {old_settings.parent}', preview)
+        self.assertIn(f'rename {kde_backup}', preview)
+        self.assertNotIn(f'{config_home}/hypr', preview)
+        self.assertEqual(hypr_snapshot(), original_hypr)
+        self.assertTrue(old_settings.exists())
+
         self.install('--rice', rice)
+        self.assertEqual((config_home / 'sekaipop/settings.json').read_text(), '{"theme":"sekaipop"}\n')
+        self.assertEqual((config_home / 'kdeglobals.sekaipop-bak').read_text(), 'ColorScheme=SekaipopA\n')
+        self.assertFalse(old_settings.exists())
+        self.assertEqual(hypr_snapshot(), original_hypr)
         self.assertFalse(self.config.exists())
         self.install('--rice', rice, '--kitty', 'enable')
         self.apply(action='sync')
@@ -326,6 +361,13 @@ class KittyThemeTest(unittest.TestCase):
         self.apply(action='sync')
         self.assertFalse(self.config.exists())
         self.assertFalse(self.palette.exists())
+        self.assertEqual(hypr_snapshot(), original_hypr)
+        calls = (self.home / 'qs-calls').read_text().splitlines()
+        self.assertTrue(any(call.endswith(' ipc call apptheme syncKitty') for call in calls))
+        self.assertFalse(any(call.endswith(' list') or ' list -p ' in call for call in calls))
+
+        self.assertIn('cannot be combined', self.install('--restore', success=False))
+        self.assertEqual(hypr_snapshot(), original_hypr)
 
 
 if __name__ == '__main__':
