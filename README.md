@@ -230,6 +230,9 @@ It is read-only: it lists what is installed and what is missing, and changes not
 | `--hypr full` | Install the preconfigured Hyprland config (default on a new setup) |
 | `--hypr merge` | **Keep your config**, only add a small `sekaipop_session` file |
 | `--hypr skip` | Don't touch Hyprland at all |
+| `--kitty keep` | Keep the current Kitty theme choice and report configuration issues |
+| `--kitty enable` | Opt in to SekaiPop's Kitty colours after validating the configuration |
+| `--restore-kitty` | Remove SekaiPop's Kitty integration and exit |
 | `--no-deps` | Only copy files, install no packages |
 | `--rice DIR` | Install a different copy of the `sekaipop` folder |
 | `--restore` | Put back the Hyprland config backed up by the last run |
@@ -253,6 +256,16 @@ It is read-only: it lists what is installed and what is missing, and changes not
 ### Updating
 
 Run the install command again. Settings and state live in `~/.local/state/sekaipop`, so your choices are kept. If you cloned the repo instead, `git pull` and run `./install.sh` again.
+
+### Kitty colours
+
+On a first interactive install, Kitty colour sync is offered as an opt-in. `--yes` and repeat installs keep the current choice unless you pass `--kitty enable`. You can also enable it in **Settings → Desktop → App colours → kitty** or run `qs -c sekaipop ipc call apptheme apply kitty`. Kitty, Fish and Terminal prompt have separate controls. If the shell is stopped when the installer enables sync, Kitty gets the current SekaiPop palette when the shell starts.
+
+The installer checks the default Kitty config and its includes using the installed Kitty's option parser. It reports invalid settings and include paths, duplicate references, and files that set colours. For a broken template with values like `$term0`, review the reported file and line. If you recognise the include as an obsolete colour theme, comment out that reference or regenerate a valid theme, then retry. Existing valid theme files stay in place. The final SekaiPop include takes precedence for the colours it sets.
+
+Kitty's `*-theme.auto.conf` files take precedence over a normal include. SekaiPop reports these files and leaves them for you to review. Config generators (`geninclude`) also require manual review because their output can change and checking them would run code. The integration respects `KITTY_CONFIG_DIRECTORY` and XDG paths, and asks you to review linked config files before modifying them. Live reload covers Kitty instances using the same default config directory. Launches with explicit `--config` or `--override` manage their own precedence.
+
+Use **Revert** beside Kitty, `qs -c sekaipop ipc call apptheme revert kitty`, or `./install.sh --restore-kitty` before removing Kitty or SekaiPop. Revert removes the SekaiPop include and keeps the generated palette if another inspected include still uses it. Backups of changed Kitty config files are kept under `${XDG_STATE_HOME:-~/.local/state}/sekaipop/kitty-backups/`. Your choice persists across updates. Use `--dry-run` with the installer or `--restore-kitty` to preview the operation.
 
 ### Your own changes
 

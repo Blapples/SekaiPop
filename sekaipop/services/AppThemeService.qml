@@ -63,6 +63,8 @@ Singleton {
     }
 
     function enabled(id) {
+        if (id === "kitty")
+            return root.status.kitty === "on"
         return SettingsService.flag("appTheme." + id)
     }
 
@@ -182,11 +184,15 @@ Singleton {
             return
         const next = root.queue[0]
         root.queue = root.queue.slice(1)
+        runner.kittyJob = next[1] === "kitty"
         runner.exec(["sh", root.script].concat(next))
     }
 
+    property bool kittyFailed: false
+
     Process {
         id: runner
+        property bool kittyJob: false
         stderr: StdioCollector {
             onStreamFinished: {
                 if (text.trim().length > 0)
@@ -199,16 +205,18 @@ Singleton {
                     console.log("[AppThemeService]", text.trim())
             }
         }
-        onExited: {
+        onExited: exitCode => {
+            if (runner.kittyJob)
+                root.kittyFailed = exitCode !== 0 && exitCode !== 3
             root.refreshStatus()
             root.pump()
         }
     }
 
-    function applyScripts(scripts) {
+    function applyScripts(scripts, action = "apply") {
         const col = root.colours()
         for (const s of scripts)
-            root.enqueue(["apply", s].concat(col))
+            root.enqueue([action, s].concat(col))
     }
 
     function revertScripts(scripts) {
@@ -218,6 +226,13 @@ Singleton {
 
     // The switch: on applies now, off reverts now.
     function setEnabled(id, on) {
+        if (id === "kitty") {
+            if (on && root.settled)
+                root.applyScripts(["kitty"])
+            else
+                root.enqueue([on ? "enable" : "revert", "kitty"])
+            return
+        }
         const t = root.target(id)
         if (!t)
             return
@@ -231,6 +246,10 @@ Singleton {
     // Revert: switch it off AND take its block out, even when the switch was
     // already off (a block left by an earlier run).
     function revert(id) {
+        if (id === "kitty") {
+            root.setEnabled(id, false)
+            return
+        }
         const t = root.target(id)
         if (!t)
             return
@@ -241,8 +260,9 @@ Singleton {
     function applyEnabled() {
         if (!root.settled)
             return
+        root.applyScripts(["kitty"], "sync")
         for (const t of root.targets)
-            if (root.enabled(t.id))
+            if (t.id !== "kitty" && root.enabled(t.id))
                 root.applyScripts(t.scripts)
     }
 
@@ -272,13 +292,17 @@ Singleton {
     property var status: ({})
 
     function refreshStatus() {
-        if (!statusProc.running)
+        if (statusProc.running)
+            statusProc.pending = true
+        else
             statusProc.exec(["sh", root.script, "status"])
     }
 
     // The state of one switch's apps, for the Settings detail line:
     // "applied", "not installed" or "off".
     function stateOf(id) {
+        if (id === "kitty" && (root.kittyFailed || root.status.kitty === "conflict"))
+            return "conflict"
         const t = root.target(id)
         if (!t)
             return ""
@@ -297,6 +321,13 @@ Singleton {
 
     Process {
         id: statusProc
+        property bool pending: false
+        onExited: {
+            if (pending) {
+                pending = false
+                root.refreshStatus()
+            }
+        }
         stdout: StdioCollector {
             onStreamFinished: {
                 const st = {}
@@ -328,6 +359,13 @@ Singleton {
             const list = id === "all" ? root.targets : [root.target(id)].filter(t => t)
             for (const t of list)
                 root.revert(t.id)
+        }
+
+        function syncKitty(): void {
+            if (root.settled)
+                root.applyScripts(["kitty"], "sync")
+            else
+                root.refreshStatus()
         }
 
         function status(): string {

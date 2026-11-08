@@ -25,6 +25,10 @@ set -euo pipefail
 REPO=${SEKAIPOP_REPO:-https://github.com/Blapples/SekaiPop.git}
 REF=${SEKAIPOP_REF:-main}
 KEEP=${SEKAIPOP_DIR:-}
+# A preview uses a disposable download even when a persistent checkout was configured.
+for a in "$@"; do
+    case "$a" in --dry-run) KEEP= ;; --) break ;; esac
+done
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then B=$'\e[1m'; D=$'\e[2m'; C=$'\e[38;5;80m'; R=$'\e[38;5;203m'; Z=$'\e[0m'; else B=; D=; C=; R=; Z=; fi
 case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) U=1 ;; *) U=0 ;; esac

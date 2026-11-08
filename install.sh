@@ -17,6 +17,9 @@
 #   --hypr MODE         full   = install the preconfigured Hyprland config (default for a new setup)
 #                       merge  = keep YOUR config, only add a small sekaipop_session file to it
 #                       skip   = do not touch Hyprland at all
+#   --kitty MODE        keep   = keep the current Kitty theme choice
+#                       enable = opt in to SekaiPop's Kitty colours after validation
+#   --restore-kitty     remove only SekaiPop's Kitty colour integration and exit
 #   --no-deps           do not install packages / services (only copy files)
 #   --with-tests        also copy the developer tests folder
 #   --restore           put back the Hyprland config that was backed up by the last run
@@ -27,17 +30,19 @@
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 
-REPLACED=0; DRY=0; YES=0; RICE=""; HYPR=auto; NODEPS=0; WITH_TESTS=0; RESTORE=0; DEPS_ARGS=()
+REPLACED=0; DRY=0; YES=0; RICE=""; HYPR=auto; KITTY=auto; NODEPS=0; WITH_TESTS=0; RESTORE=0; RESTORE_KITTY=0; DEPS_ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --dry-run) DRY=1 ;;
         --yes|-y) YES=1 ;;
         --rice) shift; RICE=${1:-} ;;
         --hypr) shift; HYPR=${1:-}; case "$HYPR" in full|merge|skip) ;; *) echo "--hypr needs full|merge|skip" >&2; exit 2 ;; esac ;;
+        --kitty) shift; KITTY=${1:-}; case "$KITTY" in keep|enable) ;; *) echo "--kitty needs keep|enable" >&2; exit 2 ;; esac ;;
+        --restore-kitty) RESTORE_KITTY=1 ;;
         --no-deps) NODEPS=1 ;;
         --with-tests) WITH_TESTS=1 ;;
         --restore) RESTORE=1 ;;
-        -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
         --) shift; DEPS_ARGS=("$@"); break ;;
         *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
@@ -101,6 +106,19 @@ hypr_running() { [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && have hyprctl && hy
 
 banner "SekaiPop installer" "Quickshell + Hyprland desktop"
 
+if [ "$RESTORE_KITTY" = 1 ]; then
+    step "Restoring Kitty colours"
+    KITTY_THEME="$HERE/sekaipop/scripts/theming/app-theme.sh"
+    [ -f "$KITTY_THEME" ] || KITTY_THEME="$QS_DEST/scripts/theming/app-theme.sh"
+    KITTY_FLAGS=()
+    [ "$DRY" = 1 ] && KITTY_FLAGS+=(--dry-run)
+    sh "$KITTY_THEME" revert kitty "${KITTY_FLAGS[@]}" || exit $?
+    if [ "$DRY" = 0 ] && have qs && [ -f "$QS_DEST/shell.qml" ]; then
+        qs -p "$QS_DEST" ipc call apptheme syncKitty >/dev/null 2>&1 || true
+    fi
+    exit 0
+fi
+
 # Anything left from when SekaiPop was called pjsekai (settings, presets, app-colour blocks, the
 # Hyprland overrides file and backups) is moved to the new name first. Does nothing otherwise.
 if [ -f "$HERE/sekaipop/scripts/system/migrate-from-pjsekai.sh" ]; then
@@ -140,6 +158,7 @@ if [ -z "$RICE" ] || [ ! -f "$RICE/shell.qml" ]; then
     exit 1
 fi
 RICE=$(cd "$RICE" && pwd)
+FIRST_INSTALL=0; [ -f "$QS_DEST/shell.qml" ] || FIRST_INSTALL=1
 VERSION=$(cat "$RICE/VERSION" 2>/dev/null || echo unknown)
 ok "rice: $RICE ${D}(version $VERSION)${Z}"
 
@@ -233,6 +252,40 @@ if [ -n "$QTV" ] && ! ver_ge "$QTV" 6.12; then
     fi
 elif [ -n "$QTV" ]; then
     ok "Qt $QTV: the shipped shaders work as they are"
+fi
+
+# ------------------------------------------------------------------ optional Kitty colours
+step "Kitty colours"
+KITTY_THEME="$RICE/scripts/theming/app-theme.sh"
+if [ ! -f "$RICE/scripts/theming/kitty-theme.py" ]; then
+    if [ "$KITTY" = enable ]; then
+        fail "This rice does not include the Kitty configuration checker."
+    else
+        warn "This rice does not include the Kitty configuration checker."
+    fi
+elif sh "$KITTY_THEME" check kitty; then
+    kitty_status=$(sh "$KITTY_THEME" status kitty)
+    if [ "$KITTY" = auto ] && [ "$FIRST_INSTALL" = 1 ] && [ "$kitty_status" = off ] &&
+        [ "$YES" = 0 ] && [ "$DRY" = 0 ] && [ -t 0 ]; then
+        read -r -p "  Enable SekaiPop's dynamic Kitty colours? [y/N] " answer
+        case "$answer" in y|Y|yes|YES) KITTY=enable ;; esac
+    fi
+    if [ "$KITTY" = enable ]; then
+        KITTY_FLAGS=()
+        [ "$DRY" = 1 ] && KITTY_FLAGS+=(--dry-run)
+        if sh "$KITTY_THEME" enable kitty "${KITTY_FLAGS[@]}"; then
+            if [ "$DRY" = 0 ]; then
+                ok "Kitty sync enabled. SekaiPop supplies the palette when the shell runs."
+                if have qs; then qs -p "$QS_DEST" ipc call apptheme syncKitty >/dev/null 2>&1 || true; fi
+            fi
+        else
+            fail "Kitty colour sync could not be enabled (see above)"
+        fi
+    else
+        info "Keeping the current Kitty colour choice."
+    fi
+elif [ "$KITTY" = enable ]; then
+    fail "Kitty colour sync could not be enabled (see above)"
 fi
 
 # monitors.lua is made for THIS machine, never shipped: a file written for someone else's screens
