@@ -35,7 +35,7 @@ function world() {
         PaletteService: snap("palettecard", { x: 1, y: 1, shown: true, size: "full", colors: ["#fff"], scheme: "x" }),
         WaterTankService: snap("watertank", { x: 4, y: 4, shown: true, size: "1x1", goal: 10, glassMl: 300, glasses: 5, day: "2026-10-27", history: { "2026-10-26": 7 } }),
         DownloaderService: snap("downloader", { x: 6, y: 6, shown: true, size: "2x2", engine: "cobalt", mode: "audio", quality: "720", audioFormat: "opus", folder: "/d", cobaltUrl: "https://c.example", cobaltKey: "secret", notify: false, done: [{ id: 1, file: "/d/a.mp3" }] }),
-        LyricsService: snap("lyrics", { x: 2, y: 3, shown: true, syncMs: 250, offsets: { "a|b|1": 300 } }),
+        LyricsService: snap("lyrics", { x: 2, y: 3, shown: true, kinetic: false, kineticDim: 0.45, kineticColors: "theme", kineticCamera: "drift", kineticStyle: "poster", syncMs: 250, offsets: { "a|b|1": 300 } }),
         TodoService: { posX: 1, posY: 2, posScale: 1, shown: true, size: "2x2",
             setShown(v) { log.push("todo.setShown(" + v + ")"); this.shown = v },
             setSize(v) { this.size = v }, setPosition(x, y, s) { this.posX = x; this.posY = y; this.posScale = s } },
@@ -150,6 +150,27 @@ w = world(); list = reg.load(w); w.VisualizerService.state.vertical = true; w.Vi
 const oldViz = JSON.parse(JSON.stringify(saved)); delete oldViz.visualizer.vertical; delete oldViz.visualizer.bandX
 PP.wear(list, oldViz, ctx)
 assert.deepStrictEqual([w.VisualizerService.state.vertical, w.VisualizerService.state.bandX], [false, -1])
+// the lyrics' whole-screen look rides in a preset: a preset made with it on wears it on (with its
+// colors and dim), and one saved before it existed (no kinetic keys) wears the card as it always was
+w = world(); list = reg.load(w)
+w.LyricsService.state.kinetic = true; w.LyricsService.state.kineticDim = 0.7; w.LyricsService.state.kineticColors = "sekai"
+const kinSaved = PP.capture(list)
+assert.deepStrictEqual([kinSaved.lyrics.kinetic, kinSaved.lyrics.kineticDim, kinSaved.lyrics.kineticColors], [true, 0.7, "sekai"], "the kinetic look is saved in the preset")
+w = world(); list = reg.load(w)
+PP.wear(list, kinSaved, ctx)
+assert.deepStrictEqual([w.LyricsService.state.kinetic, w.LyricsService.state.kineticDim, w.LyricsService.state.kineticColors], [true, 0.7, "sekai"], "...and worn")
+assert.strictEqual(w.LyricsService.state.syncMs, 250, "while the sync nudge stays yours")
+w = world(); list = reg.load(w)
+w.LyricsService.state.kinetic = true; w.LyricsService.state.kineticDim = 0.7; w.LyricsService.state.kineticColors = "accent"
+const oldLyr = JSON.parse(JSON.stringify(saved)); for (const k of ["kinetic", "kineticDim", "kineticColors"]) delete oldLyr.lyrics[k]
+PP.wear(list, oldLyr, ctx)
+assert.deepStrictEqual([w.LyricsService.state.kinetic, w.LyricsService.state.kineticDim, w.LyricsService.state.kineticColors], [false, 0.45, "theme"], "an old preset wears the lyrics card, whatever the kinetic look is now")
+assert.strictEqual(w.LyricsService.state.shown, true, "and keeps its on / off")
+// the "you are wearing this one" tick sees the kinetic look
+w = world(); list = reg.load(w)
+const tickA = JSON.stringify(PP.digestWidgets(list, PP.capture(list)))
+w.LyricsService.state.kinetic = true
+assert.notStrictEqual(JSON.stringify(PP.digestWidgets(list, kinSaved)), tickA, "a preset with the kinetic look differs from one without")
 // a preset saved before the to-do's size existed has the card as it always was: "full",
 // whatever size it is on now
 w = world(); list = reg.load(w); w.TodoService.size = "2x2"

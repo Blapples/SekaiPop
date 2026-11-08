@@ -315,13 +315,27 @@ SettingsPage {
 
         SettingChoice {
             label: "Lockscreen style"
-            sublabel: "Gacha: the Project Sekai screen. Calendar: a printed poster with framed pictures from your wallpaper"
+            sublabel: "Gacha: the Project Sekai screen. Calendar: a printed poster with framed pictures from your wallpaper. Custom: your own widgets (clock, date, weather, now playing ...) around the password field"
             current: SettingsService.get("lock.style")
             options: [
                 { id: "gacha", label: "Gacha", icon: "stars" },
-                { id: "calendar", label: "Calendar", icon: "calendar_month" }
+                { id: "calendar", label: "Calendar", icon: "calendar_month" },
+                { id: "custom", label: "Custom", icon: "dashboard_customize" }
             ]
             onPicked: id => SettingsService.set("lock.style", id)
+        }
+
+        SettingAction {
+            visible: SettingsService.get("lock.style") === "custom"
+            icon: "dashboard_customize"
+            label: "Edit lockscreen"
+            detail: "Drag the widgets where you want them"
+            onActivated: {
+                // The editor covers the screen; Settings (the phone) steps aside.
+                if (page.host)
+                    page.host.closeRequested()
+                LockEditService.open("")
+            }
         }
 
         SettingChoice {
@@ -386,7 +400,7 @@ SettingsPage {
         SettingToggle {
             icon: "auto_awesome"
             label: "Lockscreen animations"
-            detail: SettingsService.flag("lock.animations") ? (SettingsService.get("lock.style") === "calendar" ? "Gacha lockscreen only" : "Sparkles on (turn off to save GPU)") : "OFF (no sparkles, lighter on the GPU)"
+            detail: SettingsService.flag("lock.animations") ? (SettingsService.get("lock.style") !== "gacha" ? "Gacha lockscreen only" : "Sparkles on (turn off to save GPU)") : "OFF (no sparkles, lighter on the GPU)"
             checked: SettingsService.flag("lock.animations")
             onToggled: SettingsService.toggle("lock.animations")
         }

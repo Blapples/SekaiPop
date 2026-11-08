@@ -2,7 +2,7 @@
 const fs = require('fs'), assert = require('assert')
 const src = fs.readFileSync(__dirname + '/../../modules/sekai/readers/ReaderMath.js', 'utf8').replace('.pragma library', '')
 const M = {}
-new Function('M', src + ';Object.assign(M,{MODES,BACKGROUNDS,DEFAULT_PREFS,modeInfo,isMode,normalizePrefs,gridColumns,webtoonFromMeta,looksLikeStrip,resolveMode,orderChapters,chapterNeighbors,trackProgress,LIST_TABS,visibleListTabs,listTabLabel,formatScore,yourScoreText,communityScoreText,shortCount,groupDigits,meanScoreText,sizeText,listProgressText,STATUS_BAR,statusSegments,genreBars,activityGrid,activityCaption,monthMarks,dayText,scoreStamp,scoreBars,statStripCells,activityStats,shelfNote,timeAgo,feedNote,feedRows,countBars,ellipsize,progressFraction,buildSpreads,spreadIndex,aspectOf,fitSize,clampPan,zoomAbout,stepZoom,keyAction,tapAction,keysHint,sanitize,saveName});')(M)
+new Function('M', src + ';Object.assign(M,{MODES,BACKGROUNDS,DEFAULT_PREFS,modeInfo,isMode,normalizePrefs,gridColumns,webtoonFromMeta,looksLikeStrip,resolveMode,orderChapters,chapterNeighbors,trackProgress,chaptersUpTo,LIST_TABS,visibleListTabs,listTabLabel,formatScore,yourScoreText,communityScoreText,shortCount,groupDigits,meanScoreText,sizeText,listProgressText,STATUS_BAR,statusSegments,genreBars,activityGrid,activityCaption,monthMarks,dayText,scoreStamp,scoreBars,statStripCells,activityStats,shelfNote,timeAgo,feedNote,feedRows,countBars,ellipsize,progressFraction,buildSpreads,spreadIndex,aspectOf,fitSize,clampPan,zoomAbout,stepZoom,keyAction,tapAction,keysHint,sanitize,saveName});')(M)
 const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-6, (m || '') + ': ' + a + ' vs ' + b)
 
 // 1. the seven modes, each with a name, an icon and a family
@@ -224,6 +224,24 @@ console.log('manga reader: all checks passed')
     assert.deepStrictEqual(M.trackProgress([{ id: 'x', chapter: 'Prologue', kind: 'chapter' }], only(['x'])), { progress: 0, volumes: 0 })
 }
 console.log('trackProgress ok')
+
+// ── Opening a title already begun on AniList: which chapters count as read
+{
+    const chs = [
+        { id: 'a', chapter: '1',  kind: 'chapter' }, { id: 'b', chapter: '2',  kind: 'chapter' },
+        { id: 'c', chapter: '12.5', kind: 'chapter' }, { id: 'd', chapter: '13', kind: 'chapter' },
+        { id: 'e', chapter: '3',  kind: 'volume' },  { id: 'f', chapter: '1',  kind: 'extra' },
+        { id: 'g', chapter: 'Prologue', kind: 'chapter' }, { id: 'h', chapter: '0', kind: 'chapter' }, null,
+    ]
+    assert.deepStrictEqual(M.chaptersUpTo(chs, 0, 0), [])
+    assert.deepStrictEqual(M.chaptersUpTo(chs, 2, 0), ['a', 'b', 'h'])
+    // a half chapter counts as its whole number, the way trackProgress sends it
+    assert.deepStrictEqual(M.chaptersUpTo(chs, 12, 0), ['a', 'b', 'c', 'h'])
+    assert.deepStrictEqual(M.chaptersUpTo(chs, 13, 3), ['a', 'b', 'c', 'd', 'e', 'h'])
+    assert.deepStrictEqual(M.chaptersUpTo(chs, 0, 3), ['e'])
+    assert.deepStrictEqual(M.chaptersUpTo(null, 5, 5), [])
+}
+console.log('chaptersUpTo ok')
 
 // ── The Library's AniList lists: tabs (no "All"), scores in the user's format, progress text
 {

@@ -24,8 +24,13 @@ Item {
     property var px: n => n
     // How wide the capsule may grow.
     property real maxWidth: 900
+    // The Lyrics widget of the Custom lockscreen (LockLyricsWidget.qml) is on because it was
+    // placed, so it does not wait for the setting; the Gacha look still does.
+    property bool always: false
+    // The editor's sample: a made-up line, shown whether or not anything is playing.
+    property bool preview: false
 
-    readonly property bool enabled: SettingsService.flag("lock.lyrics")
+    readonly property bool enabled: root.always || SettingsService.flag("lock.lyrics")
     readonly property var player: root.media ? root.media.player : null
     readonly property bool playing: root.media ? root.media.playing : false
     readonly property bool working: root.enabled && root.media !== null && root.media.present && root.player !== null && root.player !== undefined
@@ -135,8 +140,8 @@ Item {
     }
 
     // What is shown: kept while the capsule closes, so the words do not blank before it is gone.
-    property string shownNow: ""
-    property string shownNext: ""
+    property string shownNow: root.preview ? "The line being sung" : ""
+    property string shownNext: root.preview ? "and the line after it" : ""
     readonly property string wantNow: root.curIndex < 0 ? "" : (root.textAt(root.curIndex) || "\u266a")
     readonly property string wantNext: root.curIndex < 0 ? root.textAt(0) : root.nextText(root.curIndex)
 
@@ -151,7 +156,7 @@ Item {
 
     // ===== the capsule =====
     // 0 -> 1: it opens (height, then its words) rather than popping.
-    property real reveal: (root.haveLines && root.shownNow + root.shownNext !== "") ? 1 : 0
+    property real reveal: ((root.haveLines || root.preview) && root.shownNow + root.shownNext !== "") ? 1 : 0
     Behavior on reveal {
         NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
     }

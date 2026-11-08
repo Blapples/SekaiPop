@@ -2,9 +2,10 @@ import QtQuick
 import qs.services
 
 // Which look a monitor's lockscreen wears: the Project Sekai gacha screen
-// (LockSurface.qml, the default) or the Calendar poster (LockCalendar.qml). Picked in
+// (LockSurface.qml, the default), the Calendar poster (LockCalendar.qml) or the Custom
+// screen you arrange yourself (LockCanvas.qml). Picked in
 // Settings -> General -> Launcher & lock -> Lockscreen style, or
-//   qs -c sekaipop ipc call options set lock.style calendar     (gacha | calendar)
+//   qs -c sekaipop ipc call options set lock.style calendar     (gacha | calendar | custom)
 //
 // Lockscreen.qml (the real lock surface) and LockRing.qml (its copy that plays the
 // transition) both use this, so they always show the same look. Only the chosen look
@@ -29,6 +30,13 @@ Item {
 
     readonly property bool calendar: SettingsService.get("lock.style") === "calendar"
 
+    // The Custom look (LockCanvas.qml): the widgets you placed and the password block. Its
+    // layout (LockCanvasService) is read from disk a moment after the shell starts, so this
+    // host asks for it as soon as Custom is the style, long before any lock: the first lock
+    // after a restart then already has your layout instead of the first one.
+    readonly property bool custom: SettingsService.get("lock.style") === "custom"
+    readonly property bool canvasLoaded: root.custom ? LockCanvasService.loaded : true
+
     // The Calendar look's picture map (a tiny ImageMagick read, LockCropService) used to be
     // asked for the moment the look was built, which was at shell start, long before any
     // lock. The look is only built while locking now, so this host asks for it itself when
@@ -51,7 +59,7 @@ Item {
         id: face
         anchors.fill: parent
         active: root.live
-        sourceComponent: root.calendar ? calendarLook : gachaLook
+        sourceComponent: root.custom ? customLook : (root.calendar ? calendarLook : gachaLook)
     }
 
     Component {
@@ -68,6 +76,16 @@ Item {
         id: calendarLook
 
         LockCalendar {
+            context: root.context
+            uiScale: root.uiScale
+            screenName: root.screenName
+        }
+    }
+
+    Component {
+        id: customLook
+
+        LockCanvas {
             context: root.context
             uiScale: root.uiScale
             screenName: root.screenName

@@ -156,6 +156,24 @@ PanelWindow {
 
                 TrayMenuRow {
                     width: col.width
+                    text: "Edit lockscreen"
+                    onClicked: {
+                        const screen = EditMode.menuScreen
+                        EditMode.closeMenu()
+                        LockEditService.open(screen)
+                    }
+
+                    MaterialIcon {
+                        anchors.centerIn: parent
+                        name: "lock"
+                        size: 18
+                        weight: 600
+                        color: mt.ink
+                    }
+                }
+
+                TrayMenuRow {
+                    width: col.width
                     visible: ImageService.anyPinned
                     text: "Unpin images"
                     onClicked: {

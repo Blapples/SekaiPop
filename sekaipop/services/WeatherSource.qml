@@ -129,7 +129,54 @@ Scope {
     function fail(text) {
         root.failed = true
         root.problemText = text
+        root.scheduleRetry()
     }
+
+    // A try that failed is tried again soon (20 s, 40 s, 80 s ... up to 5 times), not in 15
+    // minutes: right after a wake or an unlock the network is often not up yet, and the
+    // widget would sit empty until the next poll. A good reading resets the count.
+    property int retryCount: 0
+
+    function scheduleRetry() {
+        if (root.restartPending || !root.polling || root.retryCount >= 5)
+            return
+        retryTimer.interval = 20000 * Math.pow(2, root.retryCount)
+        root.retryCount = root.retryCount + 1
+        retryTimer.restart()
+    }
+
+    Timer {
+        id: retryTimer
+        repeat: false
+        onTriggered: {
+            if (root.polling)
+                root.refresh()
+        }
+    }
+
+    // Start from the last reading anybody made (services/WeatherCache.qml), so a source that
+    // is built new (the lockscreen's, the desktop card after an unlock) shows something at
+    // once instead of nothing until its own fetch lands.
+    function adoptCache() {
+        if (root.lastData || root.lastFetchMs > 0)
+            return
+        const c = WeatherCache.get(root.location)
+        if (!c)
+            return
+        root.place = c.place
+        root.placeMs = c.placeMs
+        try {
+            root.apply(c.data)
+        } catch (e) {
+            return
+        }
+        // apply() stamps "now"; this reading is as old as when it was fetched.
+        root.lastData = c.data
+        root.lastFetchMs = c.ms
+        root.updatedText = c.updatedText
+    }
+
+    Component.onCompleted: root.adoptCache()
 
     function clearReading() {
         root.lastData = null
@@ -181,6 +228,7 @@ Scope {
     function refresh() {
         if (root.loading)
             return
+        root.adoptCache()
         const q = OM.parseQuery(root.location)
         // The automatic place follows the machine (a laptop that travelled): ask again
         // about once an hour. A typed place stays put until it is changed.
@@ -212,6 +260,7 @@ Scope {
 
     // For the popup: only bother Open-Meteo again if the reading is old.
     function refreshIfStale() {
+        root.adoptCache()
         if (Date.now() - root.lastFetchMs > 5 * 60 * 1000)
             root.refresh()
     }
@@ -249,6 +298,8 @@ Scope {
         root.lastFetchMs = now.getTime()
         root.failed = false
         root.problemText = ""
+        root.retryCount = 0
+        retryTimer.stop()
     }
 
     // False stops the 15-minute poll (and starting it again looks straight away).
@@ -266,8 +317,11 @@ Scope {
         // card coming back after Desktop Focus Mode hid it) only looks again if the
         // reading is old (see onPollingChanged), so going back and forth between an
         // app and an empty workspace does not ask every time.
-        triggeredOnStart: root.lastFetchMs === 0
-        onTriggered: root.refresh()
+        triggeredOnStart: true
+        // Not a plain refresh(): a source that started from a fresh stored reading
+        // (WeatherCache) does not need to ask again at once. A first start (no reading) and
+        // every 15-minute poll are older than 5 minutes, so they do ask.
+        onTriggered: root.refreshIfStale()
     }
 
     onPollingChanged: {
@@ -351,6 +405,7 @@ Scope {
                     const data = JSON.parse(text)
                     root.apply(data)
                     root.lastData = data
+                    WeatherCache.store(root.location, root.place, root.placeMs, data, root.lastFetchMs, root.updatedText)
                 } catch (e) {
                     // The service sometimes answers with an error page (or a JSON
                     // error) when it's overloaded; keep what we had.

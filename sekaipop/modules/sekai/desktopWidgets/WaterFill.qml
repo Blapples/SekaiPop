@@ -60,7 +60,8 @@ RoundClip {
             radius: 1
             x: root.width - width - 6
             y: root.height * (1 - (index + 1) / root.marks) - 1
-            color: Qt.rgba(mt.colBorder.r, mt.colBorder.g, mt.colBorder.b, 0.4)
+            // Light on a dark glass (the navy ticks vanished into it), navy on a light one.
+            color: mt.dark ? Qt.rgba(1, 1, 1, 0.32) : Qt.rgba(mt.colBorder.r, mt.colBorder.g, mt.colBorder.b, 0.4)
         }
     }
 }

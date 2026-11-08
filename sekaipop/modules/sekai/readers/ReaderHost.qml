@@ -9,8 +9,9 @@ import qs.modules.common.widgets
 import qs.modules.sekai.readers
 
 // The manga reader (left) and the novel reader (right) as side panels over the desktop.
-// Ported from dhrruvsharma/shell (GPL-3.0-or-later): the readers' QML and their Python backends
-// are theirs, re-coloured from SekaiPop's theme (Colors.qml) and started from here.
+// Based on dhrruvsharma/shell (GPL-3.0-or-later), the blueprint of these readers: their QML and
+// Python backends started as a port of his, re-coloured from SekaiPop's theme (Colors.qml) and
+// started from here, and have since been forked and extended well beyond the original.
 //
 // Nothing is built or run until a panel is opened: each one is loaded on its first toggle and
 // put away in one of two ways (the two keys in the panel's header):
@@ -221,6 +222,18 @@ Scope {
                 }
                 sourceComponent: NovelReader {}
             }
+        }
+    }
+
+    // Going into Edit Desktop (or the lockscreen editor) puts both panels away at once: they are
+    // minimized, not closed, so what you were reading is still there when you bring one back.
+    Connections {
+        target: FocusService
+        function onEditingChanged() {
+            if (!FocusService.editing)
+                return
+            mangaSlot.minimize()
+            novelSlot.minimize()
         }
     }
 

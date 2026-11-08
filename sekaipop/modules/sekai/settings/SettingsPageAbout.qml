@@ -431,6 +431,7 @@ SettingsPage {
                 { who: "pCtrade · end4-pC", what: "Inspiration for the shell's customizability, his support, and the aurora, dots, mirror and ring visualizers" },
                 { who: "p3dro", what: "The Discord Voice service, ported from his fork of Illogical Impulse" },
                 { who: "ilyaMiro · Serpentium", what: "The equalizer engine behind the Sekai Pad, and the structure of the welcome screen" },
+                { who: "dhrruvsharma · shell", what: "The blueprint of the manga and novel readers, forked here and made much more feature-rich (GPL-3.0-or-later)" },
                 { who: "Quickshell & Hyprland", what: "The toolkit and the compositor this runs on" },
                 { who: "InioX · matugen", what: "Colours drawn from the wallpaper" },
                 { who: "CapnKitten · refact0r", what: "Material Discord and system24, the base of the Discord theme" },

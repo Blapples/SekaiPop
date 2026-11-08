@@ -9,8 +9,8 @@ import qs.modules.common
 // the compositor itself hides everything else and only shows what this
 // draws, so nothing can be clicked or typed into behind it), with one
 // LockSurface per monitor. State lives in LockState.qml; the password
-// check in LockContext.qml; the look in LockSurface.qml (gacha) or LockCalendar.qml,
-// whichever LockHost.qml picks from Settings.
+// check in LockContext.qml; the look in LockSurface.qml (gacha), LockCalendar.qml or
+// LockCanvas.qml (custom), whichever LockHost.qml picks from Settings.
 //
 // Lock it any of these ways:
 //   - the Quick Panel's Power menu (Lock)

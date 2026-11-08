@@ -16,6 +16,7 @@ import qs.modules.sekai.framing
 import qs.modules.sekai.keyboard
 import qs.modules.sekai.launcher
 import qs.modules.sekai.lock
+import qs.modules.sekai.lockEditor
 import qs.modules.sekai.notificationPopup
 import qs.modules.sekai.onScreenDisplay
 import qs.modules.sekai.overview
@@ -253,6 +254,14 @@ ShellRoot {
 
     NotificationPopup {
         source: notificationState
+    }
+
+    // The lockscreen's Notifications widget can not reach the daemon above, so its COUNT (only
+    // the number, never what a notification says) is kept in a singleton it can read.
+    Binding {
+        target: NotificationCount
+        property: "count"
+        value: notificationState.count
     }
 
     // Low-battery warnings (20 / 15 / 10 / 5 %), sent as notifications through the
@@ -1104,10 +1113,21 @@ ShellRoot {
         screenName: EditMode.homeScreen(LyricsService.screenName)
     }
 
+    // The card is not built while the lyrics are the whole-screen kinetic ones (below).
     LazyLoader {
         id: lyricsWidgetLoader
-        active: shellRoot.woke(6) && shellRoot.widgetsAllowed && ((LyricsService.loaded && LyricsService.shown && !lyricsGate.gone) || EditMode.active || shellRoot.lyricsResetRequested)
+        active: shellRoot.woke(6) && shellRoot.widgetsAllowed && !LyricsService.kinetic && ((LyricsService.loaded && LyricsService.shown && !lyricsGate.gone) || EditMode.active || shellRoot.lyricsResetRequested)
         LyricsWidget {}
+    }
+
+    // The same lyrics as kinetic typography over the whole desktop
+    // (modules/sekai/desktopWidgets/LyricsKinetic.qml): a click-through window on the wallpaper,
+    // chosen with Settings -> Desktop -> Lyrics -> Whole screen or `ipc lyrics kinetic on`. It
+    // is not built in Edit Desktop, where the desktop is being arranged.
+    LazyLoader {
+        id: lyricsKineticLoader
+        active: shellRoot.woke(6) && shellRoot.widgetsAllowed && LyricsService.loaded && LyricsService.shown && LyricsService.kinetic && !lyricsGate.gone && !EditMode.active
+        LyricsKinetic {}
     }
 
     // The copies of it on the other monitors (services/WidgetClones.qml): a window each, with a
@@ -1119,8 +1139,20 @@ ShellRoot {
         delegate: LazyLoader {
             id: clLyricsWidget
             required property string modelData
-            active: shellRoot.woke(6) && shellRoot.widgetsAllowed && LyricsService.loaded && LyricsService.shown
+            active: shellRoot.woke(6) && shellRoot.widgetsAllowed && LyricsService.loaded && LyricsService.shown && !LyricsService.kinetic
             LyricsWidget { clone: true; monitor: clLyricsWidget.modelData }
+        }
+    }
+
+    // The kinetic lyrics on the other monitors that have a copy of the lyrics.
+    Variants {
+        model: WidgetClones.screens["lyrics"] ?? []
+
+        delegate: LazyLoader {
+            id: clLyricsKinetic
+            required property string modelData
+            active: shellRoot.woke(6) && shellRoot.widgetsAllowed && LyricsService.loaded && LyricsService.shown && LyricsService.kinetic && !EditMode.active
+            LyricsKinetic { monitor: clLyricsKinetic.modelData }
         }
     }
 
@@ -1450,6 +1482,18 @@ ShellRoot {
         // Show nothing in the middle for "no synced lyrics" and "instrumental" songs; the title
         // under the card stays (`off`: the messages again).
         function hideNotes(on: bool): void { LyricsService.setHideNotes(on) }
+        // Kinetic typography over the whole screen instead of the card (and back).
+        function kinetic(on: bool): void { LyricsService.setKinetic(on) }
+        function kineticToggle(): void { LyricsService.setKinetic(!LyricsService.kinetic) }
+        // How dark the vignette behind the kinetic lyrics is, 0 .. 0.85.
+        function dim(amount: real): void { LyricsService.setKineticDim(amount) }
+        // The camera of the whole-screen lyrics: still | drift (very slow; it never beats with the words).
+        function camera(mode: string): string { return LyricsService.setKineticCamera(mode) ? "camera: " + mode : "unknown: " + mode + " (still, drift)" }
+        // The look of the whole-screen lyrics: poster | wall | marquee (`styleCycle` goes to the next).
+        function style(mode: string): string { return LyricsService.setKineticStyle(mode) ? "style: " + mode : "unknown: " + mode + " (poster, wall, marquee)" }
+        function styleCycle(): string { return "style: " + LyricsService.cycleKineticStyle() }
+        // The colours of the whole-screen lyrics: theme | sekai | accent.
+        function colors(mode: string): string { return LyricsService.setKineticColors(mode) ? "colors: " + mode : "unknown: " + mode + " (theme, sekai, accent)" }
         // Where lyrics come from: `auto` takes the best provider for each song (word by word over
         // synced, Boidu first); or a provider's name (boidu, lyricsplus, lrclib, youtubemusic,
         // simpmusic, netease, qq, kugou; "neteasecloudmusic", "qqmusic" and the like work too) to use that one
@@ -1484,6 +1528,11 @@ ShellRoot {
     EditTray {}
     // A widget pulled up off the shelf follows the pointer in a window of its own.
     EditDragGhost {}
+
+    // The lockscreen editor (LockEditor.qml, services/LockEditService.qml): Edit Desktop's twin
+    // for the Custom lockscreen. Right-click the desktop -> Edit lockscreen, or
+    //   qs -c sekaipop ipc call lockedit toggle   (or: open / close)
+    LockEditor {}
 
     // Game Mode takes the widgets away, so Edit Desktop (which is about them)
     // cannot stay open: it is closed as Game Mode comes on, and EditMode.open

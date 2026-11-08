@@ -338,7 +338,7 @@ SekaiPop is built on other people's work, and I'm grateful to all of them.
 - **[pCtrade](https://github.com/pctrade)** (end4-pC): the inspiration for how customizable this shell is, and for his support along the way. The `aurora`, `dots`, `mirror` and `ring` audio visualizers are ported from his work.
 - **[p3dro](https://github.com/P3DROVFX)**'s fork of Illogical Impulse: the Discord Voice service the bar pill and popup are ported from.
 - **[ilyamiro](https://github.com/ilyamiro)** and his Serpentium shell: the equalizer engine behind the Sekai Pad. The 10-band EasyEffects backend (`equalizer.sh`) came to SekaiPop through the pC fork, and the welcome screen follows the structure of his `Start.qml`. The handheld-console design of the Sekai Pad is SekaiPop's own.
-- **[dhrruvsharma](https://github.com/dhrruvsharma)** and his [shell](https://github.com/dhrruvsharma/shell) (GPL-3.0-or-later): the manga and novel readers, panels and Python backends, are ported from it and recoloured from SekaiPop's theme (docs/READERS.md).
+- **[dhrruvsharma](https://github.com/dhrruvsharma)** and his [shell](https://github.com/dhrruvsharma/shell) (GPL-3.0-or-later): the blueprint of the manga and novel readers. The panels and the Python backends started as a port of his work, recoloured from SekaiPop's theme, and SekaiPop's readers have since been forked and made much more feature-rich (docs/READERS.md lists what they do now). The original idea, structure and a good part of the code are his.
 
 **Projects it uses**
 

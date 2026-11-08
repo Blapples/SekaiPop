@@ -649,6 +649,7 @@ PanelWindow {
                             pct: DownloaderService.livePct
                             waiting: DownloaderService.counts.queued
                             modeLabel: DM.modeText(DownloaderService.mode)
+                            modeIcon: DM.modeIcon(DownloaderService.mode)
                             speed: DownloaderService.liveSpeed
                             choosing: DownloaderService.pickJob !== null
                             hover: dragArea.containsMouse
@@ -656,7 +657,7 @@ PanelWindow {
                         }
                     }
 
-                    // ===== 2 x 2: the paste key, the options, the list =====
+                    // ===== 2 x 2: the wide paste key, the options, the list =====
                     Component {
                         id: fullFace
 
@@ -729,7 +730,7 @@ PanelWindow {
                             readonly property string bigText: face.isSaved ? "SAVED"
                                 : (face.isFailed ? "OOPS"
                                 : (face.running ? (face.pct >= 0 ? Math.round(face.pct) + "%" : "\u00b7\u00b7\u00b7") : "GET"))
-                            readonly property int bigSize: face.isSaved ? 28 : (face.isFailed ? 34 : (face.running ? 40 : 50))
+                            readonly property int bigSize: face.isSaved ? 28 : (face.isFailed ? 32 : (face.running ? 36 : 42))
 
                             readonly property string topText: face.isNote ? face.noteText
                                 : (face.isFailed ? "FAILED"
@@ -742,13 +743,84 @@ PanelWindow {
                                 ? (DownloaderService.liveSpeed !== "" ? DownloaderService.liveSpeed + (DownloaderService.liveEta !== "" ? " \u00b7 " + DownloaderService.liveEta : "") : (DownloaderService.liveEngine !== "" ? DM.engineText(DownloaderService.liveEngine) : "WORKING"))
                                 : "PASTE LINK"
 
-                            // ===== the paste key =====
+                            // ===== the title row: the tab on the left, what it is doing on the right =====
+                            Slant {
+                                id: titleTab
+                                x: 2
+                                y: 0
+                                width: 118
+                                height: 26
+                                skew: 0.2
+                                radius: 9
+                                color: mt.chipFill
+                                borderColor: mt.pLine
+                                borderWidth: 3
+                            }
+
+                            // Text goes NEXT to the Slant (a child would lean with it).
+                            Row {
+                                x: titleTab.x + titleTab.lean / 2 + 10
+                                y: titleTab.y
+                                height: titleTab.height
+                                spacing: 5
+
+                                MaterialIcon {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    name: "download"
+                                    fill: 0
+                                    size: 15
+                                    weight: 700
+                                    color: mt.dark ? mt.accentMint : mt.colBorder
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "DOWNLOAD"
+                                    color: mt.chipInk
+                                    font.family: mt.fontFamily
+                                    font.pixelSize: 11
+                                    font.weight: Font.ExtraBold
+                                    font.styleName: mt.fontStyleBold
+                                    font.letterSpacing: 1.6
+                                }
+                            }
+
+                            // What it is doing, on the right of the title row (READY, LOADING, +2 WAITING, DONE...).
+                            Pill {
+                                id: statusChip
+                                width: Math.min(face.width - titleTab.width - 16, topLabel.implicitWidth + 26)
+                                height: 29
+                                x: face.width - width - 2
+                                y: 0
+                                shadowDy: 3
+                                cornerRadius: 12
+                                ringWidth: mt.borderWidth + mt.whiteLine
+                                fillColor: face.isSaved ? mt.accentMint : (face.isOdd ? mt.warnFill : mt.chipFill)
+
+                                Text {
+                                    id: topLabel
+                                    anchors.centerIn: parent
+                                    anchors.verticalCenterOffset: -1
+                                    width: parent.width - 14
+                                    horizontalAlignment: Text.AlignHCenter
+                                    elide: Text.ElideRight
+                                    text: face.topText
+                                    color: (face.isSaved || face.isOdd) ? mt.colBorder : mt.chipInk
+                                    font.family: mt.fontFamily
+                                    font.pixelSize: 11
+                                    font.weight: Font.ExtraBold
+                                    font.styleName: mt.fontStyleBold
+                                    font.letterSpacing: 1.2
+                                }
+                            }
+
+                            // ===== the paste key: one wide key. The round arrow on the left is the same button the 1 x 1 is,
+                            // the big word is what it is doing, and the colour comes up behind all of it as the file comes in. =====
                             Pill {
                                 id: tray
                                 x: 0
-                                y: 0
-                                width: 118
-                                height: face.height
+                                y: 32
+                                width: face.width
+                                height: 100
                                 cornerRadius: 30
                                 ringWidth: mt.borderWidth + mt.whiteLine
                                 fillColor: mt.pSurface
@@ -770,57 +842,57 @@ PanelWindow {
                                     level: face.shownLevel
                                 }
 
-                                // What it is doing, at the top.
+                                // The round arrow (a check when it is saved, a mark when it went wrong).
                                 Pill {
-                                    x: (parent.width - width) / 2
-                                    y: 10
-                                    width: Math.min(parent.width - 20, topLabel.implicitWidth + 24)
-                                    height: 27
+                                    id: disc
+                                    width: 64
+                                    height: 64 + 3
+                                    x: 10
+                                    y: (parent.height - 64) / 2 - 1
                                     shadowDy: 3
-                                    cornerRadius: 12
+                                    cornerRadius: 32
                                     ringWidth: mt.borderWidth + mt.whiteLine
                                     fillColor: face.isSaved ? mt.accentMint : (face.isOdd ? mt.warnFill : mt.chipFill)
 
-                                    Text {
-                                        id: topLabel
+                                    MaterialIcon {
                                         anchors.centerIn: parent
-                                        width: parent.width - 16
-                                        horizontalAlignment: Text.AlignHCenter
-                                        elide: Text.ElideRight
-                                        text: face.topText
-                                        color: (face.isSaved || face.isOdd) ? mt.colBorder : mt.chipInk
-                                        font.family: mt.fontFamily
-                                        font.pixelSize: 11
-                                        font.weight: Font.ExtraBold
-                                        font.styleName: mt.fontStyleBold
-                                        font.letterSpacing: 1.2
+                                        anchors.verticalCenterOffset: (trayArea.containsMouse && !face.running ? 3 : 0) - 1
+                                        name: face.isSaved ? "check" : (face.isOdd ? "error" : (face.running ? "downloading" : "download"))
+                                        size: 34
+                                        color: (face.isSaved || face.isOdd) ? mt.colBorder : (mt.dark ? mt.accentMint : mt.colBorder)
+
+                                        Behavior on anchors.verticalCenterOffset {
+                                            NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 3 }
+                                        }
                                     }
                                 }
 
-                                // The big word, in the middle, over the colour: GET, the percent, SAVED.
+                                // The big word: GET, the percent, SAVED.
                                 StickerText {
-                                    x: (parent.width - width) / 2
-                                    y: (parent.height - height) / 2
+                                    id: bigWord
+                                    x: 90
+                                    y: 27 - height / 2
                                     text: face.bigText
                                     pixelSize: face.bigSize
                                     fillColor: Qt.darker(mt.colBorder, 1.8)
                                     ringColor: "#ffffff"
                                 }
 
-                                // What pressing does, or how fast it is going, at the bottom.
+                                // What pressing does, or how fast it is going.
                                 Pill {
-                                    x: (parent.width - width) / 2
-                                    y: parent.height - height - 10
-                                    width: Math.min(parent.width - 16, bottomLabel.implicitWidth + 24)
-                                    height: 27
+                                    x: 90
+                                    y: parent.height - 24 - 8
+                                    width: Math.min(parent.width - 90 - 12, bottomLabel.implicitWidth + 26)
+                                    height: 24 + 3
                                     shadowDy: 3
-                                    cornerRadius: 12
+                                    cornerRadius: 11
                                     ringWidth: mt.borderWidth + mt.whiteLine
                                     fillColor: mt.chipFill
 
                                     Text {
                                         id: bottomLabel
                                         anchors.centerIn: parent
+                                        anchors.verticalCenterOffset: -1
                                         width: parent.width - 12
                                         horizontalAlignment: Text.AlignHCenter
                                         elide: Text.ElideRight
@@ -837,6 +909,7 @@ PanelWindow {
                                 MouseArea {
                                     id: trayArea
                                     anchors.fill: parent
+                                    hoverEnabled: true
                                     acceptedButtons: Qt.LeftButton
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: DownloaderService.paste()
@@ -846,7 +919,7 @@ PanelWindow {
                             SequentialAnimation {
                                 id: squish
                                 ParallelAnimation {
-                                    NumberAnimation { target: tray; property: "sx"; to: 1.06; duration: 80; easing.type: Easing.OutQuad }
+                                    NumberAnimation { target: tray; property: "sx"; to: 1.03; duration: 80; easing.type: Easing.OutQuad }
                                     NumberAnimation { target: tray; property: "sy"; to: 0.95; duration: 80; easing.type: Easing.OutQuad }
                                 }
                                 ParallelAnimation {
@@ -857,7 +930,7 @@ PanelWindow {
 
                             Burst {
                                 id: puff
-                                x: tray.x + tray.width / 2
+                                x: tray.x + 10 + 32
                                 y: tray.y + tray.height / 2
                                 radius: 70
                                 count: 8
@@ -867,67 +940,26 @@ PanelWindow {
                                 id: cheerBurst
                                 x: tray.x + tray.width / 2
                                 y: tray.y + tray.height / 2
-                                radius: 100
+                                radius: 110
                                 count: 14
                                 size: 11
                             }
 
-                            // ===== the right side =====
+                            // ===== the rest: the options, the list, the folder =====
                             Item {
                                 id: side
-                                x: 130
+                                x: 0
                                 y: 0
-                                width: face.width - 130
+                                width: face.width
                                 height: face.height
-
-                                // The title tab: an arrow and "DOWNLOAD".
-                                Slant {
-                                    id: titleTab
-                                    x: 2
-                                    y: 0
-                                    width: 118
-                                    height: 26
-                                    skew: 0.2
-                                    radius: 9
-                                    color: mt.chipFill
-                                    borderColor: mt.pLine
-                                    borderWidth: 3
-                                }
-
-                                // Text goes NEXT to the Slant (a child would lean with it).
-                                Row {
-                                    x: titleTab.x + titleTab.lean / 2 + 10
-                                    y: titleTab.y
-                                    height: titleTab.height
-                                    spacing: 5
-
-                                    MaterialIcon {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        name: "download"
-                                        fill: 0
-                                        size: 15
-                                        weight: 700
-                                        color: mt.dark ? mt.accentMint : mt.colBorder
-                                    }
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: "DOWNLOAD"
-                                        color: mt.chipInk
-                                        font.family: mt.fontFamily
-                                        font.pixelSize: 11
-                                        font.weight: Font.ExtraBold
-                                        font.styleName: mt.fontStyleBold
-                                        font.letterSpacing: 1.6
-                                    }
-                                }
 
                                 // ===== what to save: video / audio / mute, and how good =====
                                 Pill {
                                     id: modeKey
                                     x: 0
-                                    y: 34
-                                    width: 74
-                                    height: 42
+                                    y: 138
+                                    width: 118
+                                    height: 40
                                     shadowDy: 4
                                     cornerRadius: 15
                                     ringWidth: mt.borderWidth + mt.whiteLine
@@ -937,12 +969,12 @@ PanelWindow {
                                     Row {
                                         anchors.centerIn: parent
                                         anchors.verticalCenterOffset: -1
-                                        spacing: 4
+                                        spacing: 6
 
                                         MaterialIcon {
                                             anchors.verticalCenter: parent.verticalCenter
                                             name: DM.modeIcon(DownloaderService.mode)
-                                            size: 18
+                                            size: 19
                                             color: mt.colBorder
                                         }
                                         Text {
@@ -950,10 +982,10 @@ PanelWindow {
                                             text: DM.modeText(DownloaderService.mode)
                                             color: mt.colBorder
                                             font.family: mt.fontFamily
-                                            font.pixelSize: 11
+                                            font.pixelSize: 12
                                             font.weight: Font.ExtraBold
                                             font.styleName: mt.fontStyleBold
-                                            font.letterSpacing: 0.8
+                                            font.letterSpacing: 1.0
                                         }
                                     }
 
@@ -968,10 +1000,10 @@ PanelWindow {
 
                                 Pill {
                                     id: qualityKey
-                                    x: 82
-                                    y: 34
-                                    width: side.width - 82
-                                    height: 42
+                                    x: 126
+                                    y: 138
+                                    width: 74
+                                    height: 40
                                     shadowDy: 4
                                     cornerRadius: 15
                                     ringWidth: mt.borderWidth + mt.whiteLine
@@ -999,32 +1031,93 @@ PanelWindow {
                                     }
                                 }
 
+                                // ===== the keys on the right of that row: the folder, and clearing the list =====
+                                Pill {
+                                    id: folderKey
+                                    x: side.width - 36 - 8 - 36
+                                    y: 138
+                                    width: 36
+                                    height: 40
+                                    shadowDy: 4
+                                    cornerRadius: 14
+                                    ringWidth: mt.borderWidth + mt.whiteLine
+                                    fillColor: mt.chipFill
+                                    pressed: folderArea.pressed
+
+                                    MaterialIcon {
+                                        anchors.centerIn: parent
+                                        anchors.verticalCenterOffset: -1
+                                        name: "folder_open"
+                                        size: 19
+                                        color: mt.chipInk
+                                    }
+
+                                    MouseArea {
+                                        id: folderArea
+                                        anchors.fill: parent
+                                        acceptedButtons: Qt.LeftButton
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: DownloaderService.openFolder()
+                                    }
+                                }
+
+                                Pill {
+                                    id: clearKey
+                                    x: side.width - 36
+                                    y: 138
+                                    width: 36
+                                    height: 40
+                                    shadowDy: 4
+                                    cornerRadius: 14
+                                    ringWidth: mt.borderWidth + mt.whiteLine
+                                    fillColor: mt.chipFill
+                                    pressed: clearArea.pressed
+                                    opacity: DownloaderService.counts.done + DownloaderService.counts.failed > 0 ? 1 : 0.45
+
+                                    MaterialIcon {
+                                        anchors.centerIn: parent
+                                        anchors.verticalCenterOffset: -1
+                                        name: "delete"
+                                        size: 19
+                                        color: mt.chipInk
+                                    }
+
+                                    MouseArea {
+                                        id: clearArea
+                                        anchors.fill: parent
+                                        acceptedButtons: Qt.LeftButton
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: DownloaderService.clearFinished()
+                                    }
+                                }
+
                                 // ===== the last downloads, newest on top =====
                                 // Nothing yet: how to start, or what is missing.
                                 Text {
                                     visible: DownloaderService.recent.length === 0
                                     x: 2
-                                    y: 90
+                                    y: 190
                                     width: side.width - 4
                                     wrapMode: Text.WordWrap
                                     text: DownloaderService.problem !== "" ? DownloaderService.problem : "Copy a link, then press GET. Or drop a link on this card."
-                                    color: DownloaderService.problem !== "" ? mt.pInk : mt.pInkSub
+                                    color: mt.pInk
+                                    opacity: DownloaderService.problem !== "" ? 1 : 0.8
                                     font.family: mt.fontFamily
                                     font.pixelSize: 12
-                                    font.weight: DownloaderService.problem !== "" ? Font.ExtraBold : Font.DemiBold
-                                    font.styleName: DownloaderService.problem !== "" ? mt.fontStyleBold : ""
+                                    font.weight: Font.ExtraBold
+                                    font.styleName: mt.fontStyleBold
                                     lineHeight: 1.1
                                 }
 
                                 Column {
                                     id: list
                                     x: 0
-                                    y: 88
+                                    y: 187
                                     width: side.width
-                                    spacing: 4
+                                    spacing: 3
 
                                     Repeater {
-                                        model: DownloaderService.recent.slice(0, 3)
+                                        model: DownloaderService.recent.slice(0, 2)
 
                                         delegate: Rectangle {
                                             id: row
@@ -1035,8 +1128,8 @@ PanelWindow {
                                             readonly property bool live: row.st === "running" || row.st === "queued"
 
                                             width: list.width
-                                            height: 30
-                                            radius: 10
+                                            height: 25
+                                            radius: 9
                                             color: Qt.rgba(mt.pInk.r, mt.pInk.g, mt.pInk.b, rowArea.containsMouse ? 0.16 : 0.09)
                                             border.width: 2
                                             border.color: row.st === "failed" ? mt.warnFill : (row.isRunning ? mt.accentMint : mt.pLine)
@@ -1145,94 +1238,20 @@ PanelWindow {
                                                     }
                                                 }
                                             }
+                                        
                                         }
                                     }
                                 }
 
-                                // ===== the keys at the bottom: the folder, and clearing the list =====
-                                Pill {
-                                    id: folderKey
-                                    x: 0
-                                    y: side.height - height
-                                    width: 98
-                                    height: 40
-                                    shadowDy: 4
-                                    cornerRadius: 14
-                                    ringWidth: mt.borderWidth + mt.whiteLine
-                                    fillColor: mt.chipFill
-                                    pressed: folderArea.pressed
-
-                                    Row {
-                                        anchors.centerIn: parent
-                                        anchors.verticalCenterOffset: -1
-                                        spacing: 5
-
-                                        MaterialIcon {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            name: "folder_open"
-                                            size: 18
-                                            color: mt.chipInk
-                                        }
-                                        Text {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: "FOLDER"
-                                            color: mt.chipInk
-                                            font.family: mt.fontFamily
-                                            font.pixelSize: 11
-                                            font.weight: Font.ExtraBold
-                                            font.styleName: mt.fontStyleBold
-                                            font.letterSpacing: 1.0
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        id: folderArea
-                                        anchors.fill: parent
-                                        acceptedButtons: Qt.LeftButton
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: DownloaderService.openFolder()
-                                    }
-                                }
-
-                                Pill {
-                                    id: clearKey
-                                    x: 106
-                                    y: side.height - height
-                                    width: side.width - 106
-                                    height: 40
-                                    shadowDy: 4
-                                    cornerRadius: 14
-                                    ringWidth: mt.borderWidth + mt.whiteLine
-                                    fillColor: mt.chipFill
-                                    pressed: clearArea.pressed
-                                    opacity: DownloaderService.counts.done + DownloaderService.counts.failed > 0 ? 1 : 0.45
-
-                                    MaterialIcon {
-                                        anchors.centerIn: parent
-                                        anchors.verticalCenterOffset: -1
-                                        name: "delete"
-                                        size: 20
-                                        color: mt.chipInk
-                                    }
-
-                                    MouseArea {
-                                        id: clearArea
-                                        anchors.fill: parent
-                                        acceptedButtons: Qt.LeftButton
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: DownloaderService.clearFinished()
-                                    }
-                                }
-
-                                // ===== choosing items of a post (covers the list while it waits) =====
+                                // ===== choosing items of a post (covers everything under the title row while it waits) =====
                                 Rectangle {
                                     id: picker
                                     visible: DownloaderService.pickJob !== null
                                     x: 0
-                                    y: 84
+                                    y: 32
                                     width: side.width
-                                    height: side.height - 84
-                                    radius: 14
+                                    height: side.height - 32
+                                    radius: 22
                                     color: mt.pSurface
                                     border.width: 3
                                     border.color: mt.pLine

@@ -346,12 +346,21 @@ Singleton {
         // itself, and a temp folder removed on exit would let the notice
         // through. Picking a wallpaper doesn't come through here, so its
         // notice is unchanged.
+        // The same folder also holds pkill / killall stubs that ignore a call
+        // naming mpvpaper (and pass every other call on): the script tidies
+        // up "its" video wallpaper that way, which here kills the shell's own
+        // mpvpaper and left the live wallpaper stopped after every light /
+        // dark switch.
         const script = "s=\"$HOME/.config/quickshell/ii/scripts/colors/switchwall.sh\"\n"
             + "if [ -f \"$s\" ]; then\n"
             + "d=\"${XDG_CACHE_HOME:-$HOME/.cache}/sekaipop/nonotify\"\n"
             + "mkdir -p \"$d\" || exit 1\n"
             + "real=$(PATH=\"${PATH//$d:/}\" command -v notify-send) || real=true\n"
             + "printf '%s\\n' '#!/bin/sh' 'case \"$*\" in *[Uu]psc*|*[Rr]esolution*) exit 0;; esac' \"exec \\\"$real\\\" \\\"\\$@\\\"\" > \"$d/notify-send.tmp\" && chmod +x \"$d/notify-send.tmp\" && mv \"$d/notify-send.tmp\" \"$d/notify-send\"\n"
+            + "for t in pkill killall; do\n"
+            + "real=$(PATH=\"${PATH//$d:/}\" command -v $t) || continue\n"
+            + "printf '%s\\n' '#!/bin/sh' 'case \"$*\" in *mpvpaper*) exit 0;; esac' \"exec \\\"$real\\\" \\\"\\$@\\\"\" > \"$d/$t.tmp\" && chmod +x \"$d/$t.tmp\" && mv \"$d/$t.tmp\" \"$d/$t\"\n"
+            + "done\n"
             + "PATH=\"$d:$PATH\" bash \"$s\" --mode \"$1\" --noswitch\n"
             + "else gsettings set org.gnome.desktop.interface color-scheme \"prefer-$1\"; fi\n"
         Quickshell.execDetached(["bash", "-c", script, "bash", goDark ? "dark" : "light"])

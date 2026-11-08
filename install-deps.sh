@@ -150,7 +150,7 @@ FEATURES=(
   dconf glib2 adw-gtk-theme xorg-xrdb
   libcanberra sound-theme-freedesktop pacman-contrib
 )
-OPTIONAL=( python-aubio songrec mpvpaper nwg-displays hypridle nodejs pnpm cloudflare-warp-bin )
+OPTIONAL=( python-aubio songrec mpvpaper nwg-displays hypridle nodejs npm pnpm cloudflare-warp-bin )
 
 WANT=("${CORE[@]}")
 if [ "$CORE_ONLY" = 0 ]; then
@@ -321,6 +321,20 @@ if [ "$FONTS" = 1 ]; then
         info "installing Google Sans Flex (the same source end-4's installer uses)"
         run_sh 'set -e; d=$(mktemp -d); git clone --depth 1 --recurse-submodules https://github.com/end-4/google-sans-flex "$d/gsf"; mkdir -p "$HOME/.local/share/fonts/sekaipop-google-sans-flex"; cp -r "$d/gsf/." "$HOME/.local/share/fonts/sekaipop-google-sans-flex/"; rm -rf "$HOME/.local/share/fonts/sekaipop-google-sans-flex/.git"; fc-cache -f; rm -rf "$d"' \
             || fail "Google Sans Flex install failed (put the .ttf files in ~/.local/share/fonts by hand and run fc-cache -f)"
+    fi
+fi
+
+# Pretendard Black: the font of the lyrics widget's Korean and Japanese words (SIL Open Font
+# License). One file from the project's v1.3.9 tag; the AUR's ttf-pretendard is the same font.
+if [ "$FONTS" = 1 ]; then
+    if have fc-list && [ -n "$(fc-list 'Pretendard:style=Black' file 2>/dev/null)" ]; then
+        info "Pretendard Black already installed"
+    else
+        info "installing Pretendard Black (about 1.5 MB, for Korean and Japanese lyrics)"
+        PRE_URL=https://raw.githubusercontent.com/orioncactus/pretendard/v1.3.9
+        PRE_DIR=$HOME/.local/share/fonts/sekaipop-pretendard
+        run_sh "set -e; mkdir -p '$PRE_DIR'; curl -fL --retry 3 -o '$PRE_DIR/Pretendard-Black.otf.part' '$PRE_URL/packages/pretendard/dist/public/static/Pretendard-Black.otf'; [ \"\$(head -c4 '$PRE_DIR/Pretendard-Black.otf.part')\" = OTTO ]; mv '$PRE_DIR/Pretendard-Black.otf.part' '$PRE_DIR/Pretendard-Black.otf'; curl -fsL --retry 3 -o '$PRE_DIR/LICENSE.txt' '$PRE_URL/LICENSE' || true; fc-cache -f" \
+            || { rm -f "$PRE_DIR/Pretendard-Black.otf.part"; fail "Pretendard Black install failed (yay -S ttf-pretendard, or put Pretendard-Black.otf from github.com/orioncactus/pretendard in ~/.local/share/fonts and run fc-cache -f)"; }
     fi
 fi
 

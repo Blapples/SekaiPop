@@ -8,6 +8,7 @@ Completely provider-agnostic — every stored ID is a PREFIXED ID
 import os
 import re
 import json
+import hashlib
 import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -123,7 +124,11 @@ _dl_lock = threading.Lock()
 # before its own last segment ("novel/<slug>/chapter-5", "<slug>/5").
 
 def _safe(part: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9_-]", "_", part)
+    name = re.sub(r"[^a-zA-Z0-9_-]", "_", part)
+    if len(name) > 100:
+        # LNReader ids carry a whole url path; keep the folder name short but still unique
+        name = name[:80] + "_" + hashlib.sha1(part.encode("utf-8")).hexdigest()[:12]
+    return name
 
 
 def _split_id(prefixed_id: str) -> tuple[str, list]:

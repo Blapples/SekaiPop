@@ -208,6 +208,8 @@ if have fc-list; then
     font 1 "Google Sans Flex" "Google Sans Flex (clone github.com/end-4/google-sans-flex into ~/.local/share/fonts, then fc-cache -f)" manual \
         "not in the repos"
     font 1 "Material Symbols Rounded" ttf-material-symbols-variable aur
+    if [ -n "$(fc-list 'Pretendard:style=Black' file 2>/dev/null)" ]; then record 3 "font: Pretendard Black" 1 "" manual
+    else record 3 "font: Pretendard Black" 0 "ttf-pretendard" aur "Korean and Japanese lyrics use the theme font"; fi
     font 3 "Nerd Font" ttf-jetbrains-mono-nerd pac "fish prompt icons"
     font 2 "emoji" noto-fonts-emoji pac "emoji picker"
     if fc-list 2>/dev/null | grep -qiE 'Noto Sans|DejaVu Sans|Liberation Sans'; then
@@ -375,7 +377,8 @@ cmd 3 nwg-displays nwg-displays pac "extra in Settings > Hyprland > Displays"
 cmd 3 hyprpm hyprland pac "only for the scroll-overview plugin"
 cmd 3 warp-cli cloudflare-warp-bin aur "WARP toggle"
 cmd 3 git git pac
-cmd 3 node nodejs pac "Discord voice companion"
+cmd 3 node nodejs pac "novel reader sources (LNReader plugins) and the Discord voice companion"
+cmd 3 npm npm pac "novel reader sources: installs the libraries the LNReader plugins use"
 cmd 3 pnpm pnpm pac "Discord voice companion"
 any 3 "Discord client (Vesktop / Equibop / Discord)" vesktop aur vesktop equibop discord
 

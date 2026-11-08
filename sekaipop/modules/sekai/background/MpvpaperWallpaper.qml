@@ -63,8 +63,13 @@ Item {
     property bool gone: false
     property bool capturing: false
 
+    // Set for a moment after mpvpaper died although it was wanted (something killed it: a theme
+    // script's `pkill mpvpaper`, an OOM kill, ...). `wanted` drops and comes back, which starts it again.
+    property bool respawning: false
+    property int respawnCount: 0
+
     readonly property bool wanted: root.path !== "" && root.screenName !== ""
-        && !root.gone && (!root.paused || !root.stopOnPause)
+        && !root.gone && !root.respawning && (!root.paused || !root.stopOnPause)
 
     property double startedAt: 0
     property int connectTries: 0
@@ -75,6 +80,14 @@ Item {
     // stop. pgrep -x only lists processes named mpvpaper, so this shell never matches itself.
     readonly property string reapCmd: "for p in $(pgrep -x mpvpaper); do tr '\\0' ' ' < /proc/$p/cmdline | grep -qF -- 'input-ipc-server="
         + root.socketPath + "' && kill -9 $p; done; true"
+
+    // Starts mpvpaper so that it dies with the shell. The kernel kills it (SIGKILL) the moment
+    // the quickshell process that started it exits, however that happens (`killall qs`, a crash,
+    // a restart), so a restarted shell does not find the old video still on screen, and no
+    // orphan keeps decoding. KILL rather than TERM: no cleanup is wanted (a SIGTERM'd mpvpaper
+    // may delete a control socket the new one has already made), and a paused one is slow to
+    // act on TERM. Without setpriv (util-linux) it is started plainly, as before.
+    readonly property string execCmd: "if command -v setpriv >/dev/null 2>&1; then exec setpriv --pdeathsig KILL mpvpaper \"$@\"; else exec mpvpaper \"$@\"; fi"
 
     function sendCommand(args, id) {
         sock.write(JSON.stringify({ command: args, request_id: id }) + "\n")
@@ -175,6 +188,19 @@ Item {
         onTriggered: root.finishCapture(false)
     }
 
+    Timer {
+        id: respawnTimer
+        interval: 700
+        onTriggered: root.respawning = false
+    }
+
+    // A run that lasted this long was healthy: the next death starts the count again.
+    Timer {
+        id: healthyTimer
+        interval: 60000
+        onTriggered: root.respawnCount = 0
+    }
+
     function sendPause() {
         if (!sock.connected)
             return
@@ -188,7 +214,7 @@ Item {
         id: proc
 
         running: root.wanted
-        command: ["sh", "-c", root.reapCmd + "; exec mpvpaper \"$@\"", "sh", "-o",
+        command: ["sh", "-c", root.reapCmd + "; " + root.execCmd, "sh", "-o",
             root.mpvOptions + " input-ipc-server=" + root.socketPath + (root.paused ? " pause=yes" : "")
                 + (root.startAt > 0 ? " start=" + root.startAt.toFixed(3) : ""),
             root.screenName, root.path]
@@ -197,6 +223,7 @@ Item {
             root.startedAt = Date.now()
             root.connectTries = 0
             root.startAt = 0
+            healthyTimer.restart()
             // mpvpaper maps its surface a little after it starts (and slower on
             // a big video): put the desktop widgets back on top once it is
             // there. Twice, so a slow start is caught too.
@@ -215,7 +242,21 @@ Item {
                 console.warn("MpvpaperWallpaper: mpvpaper exited with code " + code
                     + " right after starting (is it installed? `mpvpaper -d` lists outputs); using the built-in player")
                 root.failed()
+                return
             }
+            // It had been running and was still wanted, so someone else ended it (switching light /
+            // dark runs a script that can `pkill mpvpaper`). Nothing else would start it again, and
+            // the wallpaper would stay frozen on its first frame. Start it again, unless it keeps
+            // dying: then the built-in player takes over.
+            root.respawnCount++
+            if (root.respawnCount > 4) {
+                console.warn("MpvpaperWallpaper: mpvpaper keeps exiting; using the built-in player")
+                root.failed()
+                return
+            }
+            console.warn("MpvpaperWallpaper: mpvpaper exited (code " + code + ") while still wanted; starting it again")
+            root.respawning = true
+            respawnTimer.restart()
         }
     }
 

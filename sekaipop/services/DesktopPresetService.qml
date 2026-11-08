@@ -6,6 +6,7 @@ import qs.modules.common
 import "../modules/common/functions/PresetParts.js" as PP
 import "../modules/common/functions/Framing.js" as FR
 import "../modules/common/functions/PaletteMath.js" as PM
+import "../modules/common/functions/LockCanvasModel.js" as LM
 
 // Desktop presets: save the whole look of the desktop under a name, wear it
 // again with one click. They live on the PRESETS tab of Edit Desktop's shelf
@@ -73,6 +74,18 @@ import "../modules/common/functions/PaletteMath.js" as PM
 //               back by `keepExact` so an older preset can't reset it; this part carries it. A preset
 //               saved before it existed has no `lock` part and leaves yours alone. (The Calendar's
 //               other options, lock.tone / lock.crop / lock.powerButtons, stay yours under every preset.)
+//   lockCanvas  the Custom lockscreen's layout (LockCanvasService): every board (the shared one and
+//               each monitor's own) and the list of lockscreen widgets the shell had. Each preset
+//               has a lockscreen of its own, as the sticky notes do: editing the lockscreen
+//               while you are in a preset (the one NotesService.setName names, kept across
+//               restarts) writes the change into that preset's file by itself (adoptLock()),
+//               no need to save the preset again. Same rule as the desktop
+//               widgets: a widget that is not in the preset's list did not exist for it, so it is
+//               not shown (LockCanvasModel.wornModel). A preset saved before this existed has no
+//               `lockCanvas` part: wearing it leaves your layout where it is, but only the
+//               lockscreen widgets that existed then are kept, the newer ones come off
+//               (LockCanvasService.wearPreset, LockCanvasModel.LEGACY_KINDS, fixed). The
+//               tick ignores the part for such a preset (it never held one).
 //   images      the avatar and banner (PanelImages.qml). pick-image.sh deletes
 //               the old picture whenever a new one is picked, so a preset
 //               keeps its OWN copy in <name>.images/ beside <name>.json
@@ -333,7 +346,7 @@ Singleton {
     function wearLock(l) {
         if (!l || typeof l !== "object")
             return
-        if (l.style === "gacha" || l.style === "calendar")
+        if (l.style === "gacha" || l.style === "calendar" || l.style === "custom")
             SettingsService.set("lock.style", l.style)
     }
 
@@ -385,6 +398,11 @@ Singleton {
         // saved in the first second would hold an empty dock.
         if (PinnedAppsService.layoutRead)
             out.dock = { items: PinnedAppsService.copy(PinnedAppsService.pinned) }
+
+        // Not before LockCanvasService has read the saved layout, or a preset saved in the
+        // first second would hold the first layout instead of yours.
+        if (LockCanvasService.loaded)
+            out.lockCanvas = LockCanvasService.presetPart()
 
         if (root.quickTiles !== null) {
             out.quickPanel = {
@@ -445,6 +463,11 @@ Singleton {
     // phone's style and settings, the Overview's, and the lockscreen's style. Keyed by
     // variantKey(); every mix of the six is here.
     property var liveDigests: ({})
+    // The Custom lockscreen's layout as of the last refreshLive(), kept apart from the six
+    // variants above (a preset saved before layouts were part of one has no `lockCanvas`, and the
+    // layout is then left out of the comparison instead of doubling the variants again).
+    // "" when the layout has not been read yet.
+    property string liveCanvasDigest: ""
 
     function variantKey(noImages, noDock, noFrames, noPhone, noOverview, noLock) {
         return (noImages ? "i" : "-") + (noDock ? "d" : "-") + (noFrames ? "f" : "-")
@@ -459,6 +482,8 @@ Singleton {
         for (const noPhone of B) for (const noOverview of B) for (const noLock of B) {
             const rest = {}
             for (const k of Object.keys(now)) {
+                if (k === "lockCanvas")
+                    continue
                 if ((noImages && k === "images") || (noDock && k === "dock")
                         || (noPhone && k === "phone") || (noOverview && k === "overview")
                         || (noLock && k === "lock"))
@@ -474,12 +499,21 @@ Singleton {
         }
         root.liveDigests = out
         root.liveDigest = out[root.variantKey(false, false, false, false, false, false)]
+        root.liveCanvasDigest = root.canvasDigestOf(now)
+    }
+
+    // The lockscreen layout of a preset (or of capture()), as it is worn: widgets that were not in
+    // its list left out, boards checked, keys sorted. "" for one that holds no layout.
+    function canvasDigestOf(data) {
+        const worn = data && data.lockCanvas ? LM.wornModel(data.lockCanvas) : null
+        return worn ? root.stable(worn.boards) : ""
     }
 
     function digestOf(data) {
         const c = {}
         for (const k of Object.keys(data)) {
-            if (k !== "_meta")
+            // The lockscreen layout is compared on its own (isCurrent / canvasDigestOf).
+            if (k !== "_meta" && k !== "lockCanvas")
                 c[k] = data[k]
         }
         // The widgets are compared by the registry (PresetWidgets.qml): a widget the preset
@@ -506,7 +540,15 @@ Singleton {
         const noOverview = data.overview === undefined
         const noLock = data.lock === undefined
         const live = root.liveDigests[root.variantKey(noImages, noDock, noFrames, noPhone, noOverview, noLock)] ?? ""
-        return live !== "" && root.digestOf(data) === live
+        if (live === "" || root.digestOf(data) !== live)
+            return false
+        // The lockscreen layout. A preset saved before it was part of one has none and it never
+        // mattered to it; one that holds a layout must match the one on the lock now.
+        if (data.lockCanvas !== undefined) {
+            const mine = root.canvasDigestOf(data)
+            return mine !== "" && mine === root.liveCanvasDigest
+        }
+        return true
     }
 
     // The picture a preset is drawn with on its tile: the main monitor's
@@ -1140,6 +1182,8 @@ Singleton {
         root.wearPhone(d.phone)
         root.wearOverview(d.overview)
         root.wearLock(d.lock)
+        // The Custom lockscreen's layout (a preset without one drops the widgets newer than it).
+        LockCanvasService.wearPreset(d.lockCanvas)
 
         // 2. Colours.
         if (d.theme) {
@@ -1352,6 +1396,41 @@ Singleton {
         id: liveTimer
         interval: 700
         onTriggered: root.refreshLive()
+    }
+
+    // ===== the lockscreen follows the preset you are in =====
+    // Moving, adding, removing or switching off a lockscreen widget in the editor is saved into
+    // the preset you are in (the one last saved or worn, NotesService.setName, which is kept across
+    // restarts and cleared when that preset is deleted), so its lockscreen is always its own.
+    // Nothing to do when you are in no preset. It rewrites the file through the same `rename` job
+    // as setFavorite() (old name = new name), so the pictures stay where they are.
+    Connections {
+        target: LockCanvasService
+
+        function onEdited() {
+            lockAdopt.restart()
+        }
+    }
+
+    Timer {
+        id: lockAdopt
+        interval: 700
+        onTriggered: root.adoptLock()
+    }
+
+    function adoptLock() {
+        const name = NotesService.setName
+        const p = name !== "" ? root.find(name) : null
+        if (!p || !LockCanvasService.loaded)
+            return
+        // A preset is being put on: the layout it brings is already the one worn.
+        if (root.waiting || root.pendingData)
+            return
+        const data = JSON.parse(JSON.stringify(p.data))
+        data.lockCanvas = LockCanvasService.presetPart()
+        root.presets = root.presets.map(q => q === p ? { name: p.name, data: data } : q).sort(root.byName)
+        root.enqueue(["sh", root.script, "rename", p.name, p.name, JSON.stringify(data)])
+        root.refreshLive()
     }
 
     // ===== Edit Desktop's PRESETS tab =====

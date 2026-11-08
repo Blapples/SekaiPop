@@ -125,8 +125,16 @@ Singleton {
             skip: ["engine", "mode", "quality", "audioFormat", "folder", "cobaltUrl", "cobaltKey", "notify", "cookies", "cookiesFile", "subs", "names", "askWhich", "done"]
         },
 
-        // Only the look (place, on / off): the sync nudges belong to your player and your songs, not to a look.
-        { id: "lyrics", service: LyricsService, skip: ["syncMs", "offsets"] },
+        // Only the look (place, on / off, and the whole-screen kinetic look with its style, colors and dim):
+        // the sync nudges belong to your player and your songs, not to a look. A preset saved before
+        // the kinetic look existed has the card as it always was: kinetic off, the dim and colors at
+        // their defaults (and the poster style).
+        {
+            id: "lyrics",
+            service: LyricsService,
+            skip: ["syncMs", "offsets"],
+            before: { kinetic: false, kineticDim: 0.45, kineticColors: "theme", kineticCamera: "drift", kineticStyle: "poster" }
+        },
 
         // The sticky notes: on / off here. Their content is per preset but kept by NotesService
         // itself (switchSet / adoptSet / renameSet / dropSet, called by DesktopPresetService).

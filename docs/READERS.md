@@ -1,9 +1,11 @@
 # Manga and novel readers
 
 A manga reader (left side of the screen) and a novel reader (right side), as panels over the desktop.
-Ported from [dhrruvsharma/shell](https://github.com/dhrruvsharma/shell) (GPL-3.0-or-later): their QML
-and their Python backends, with the colours taken from SekaiPop's theme (so the panels follow the
-palette, light / dark / darker and matugen) instead of their own.
+Built on [dhrruvsharma/shell](https://github.com/dhrruvsharma/shell) (GPL-3.0-or-later), which was the
+blueprint: the readers started as a port of his QML and Python backends, with the colours taken from
+SekaiPop's theme (so the panels follow the palette, light / dark / darker and matugen) instead of his
+own. They have since been forked and made much more feature-rich (what follows is what they do now); the original design
+and a good part of the code are his, and the files that come from his work keep their notice.
 
 - **Manga:** browse each source's own **Popular** (the default) and **Latest** lists, or search and filter
   with AniList (genre, tags, origin, format, status, score, year, 18+; sorted by trending, popular, top
@@ -11,8 +13,11 @@ palette, light / dark / darker and matugen) instead of their own.
   (your AniList lists as tabs, and the titles you saved), favourites with a check for new chapters,
   downloads, and a chapter reader. The chapters and pages come from WeebCentral or MangaDex (the
   **Source** key beside Filters in Browse switches them).
-- **Novels:** browse, search, a library, and a reader in the panel. Sources: FreeWebNovel, Chikari and
-  NovelArrow, switched from the panel.
+- **Novels:** browse, search, a library, and a reader in the panel. Browse opens on **Discover**
+  (AniList's novels with filters, see [Discovering novels](#discovering-novels-on-anilist)). The sources are
+  **LNReader's plugins** (see [Novel sources](#novel-sources-lnreader)): the **Source** key in Browse shows
+  the one you are browsing by name and a tap goes on to the next installed one; the puzzle key beside it opens
+  the **Sources** page (extensions, sources, repositories) to add more.
 
 ## Using it
 
@@ -364,9 +369,179 @@ server's output (a missing module, or the port taken).
 Your data: `~/.local/share/sekaipop/readers/` (libraries, favourites, downloads);
 `~/.cache/sekaipop/readers/` (novel chapter cache).
 
-The scrapers read other people's sites, so they break when a site changes its markup. A source that
-stops working is fixed in `scripts/readers/manga_server.py` (manga) or
-`scripts/readers/novel_server/providers/` (one file per novel source).
+The scrapers read other people's sites, so they break when a site changes its markup. A manga source
+that stops working is fixed in `scripts/readers/manga_server.py`. A novel source is an LNReader plugin,
+fixed upstream in [lnreader-plugins](https://github.com/LNReader/lnreader-plugins): **Update** it in the
+sources sheet once a new version is out.
+
+## Reading a novel
+
+The novel reader reads a chapter the way the manga reader reads one (its settings are kept between
+sessions in `~/.local/share/sekaipop/readers/novel/reader.json`):
+
+- **The bars get out of the way.** The top bar (back, titles, mode, background, type size, full
+  screen) and the Prev / progress / Next bar slide in when the mouse moves and out again once it has
+  been still for a moment; they stay while the pointer is on one of them. **H** pins them on screen.
+  The mouse cursor is hidden while it rests on the page (Hyprland does that, through
+  `scripts/hyprland/reader-cursor.sh`, the same one the manga reader uses; it is Hyprland's global
+  setting, so it applies to other windows too while a chapter is up).
+- **Two reading modes**, **M** (or the mode key in the bar) switches. **Scroll** is one long page: W / S
+  or up / down scroll (hold for smooth scrolling), Space and Page Up / Page Down move a page, A / D or
+  left / right go to the previous / next chapter. **Paged** shows a screen at a time: the outer thirds
+  of the page, A / D / left / right, up / down, Space and the mouse wheel turn it, and a turn past
+  either end of the chapter goes on to the neighbouring chapter; the bar shows "3 / 12". The mode is
+  shown for a moment when a chapter opens.
+- **Type size** with **+** / **-** (0 resets) or the A- / A+ keys, 13 to 26; the place in the chapter is
+  kept. The line of text is always about 42 em wide, so it stays readable in a full window.
+- **Background**: **B** (or the palette key) goes through the shell's own colour, black, sepia and
+  white; the type colours follow.
+- **The next chapter is fetched ahead.** Half-way through a chapter (at once if it is one screen) the
+  reader asks the server for the next one and keeps it, so Next opens it with no loading. Four
+  chapters are kept; a chapter that failed to preload is fetched the usual way.
+- A toast tells the mode, the chapter that just opened, the type size and the background for a moment.
+
+### A novel's chapter page
+
+Opening a novel works like opening a manga: under the cover, "N chapters · M read" and where they come
+from ("Chapters from <source>", the source the novel belongs to), then the AniList chip, and "LAST READ".
+Each row has a stamp (`CH.n`, or `VOL.n` for a whole volume), the title, and the date the source gives for
+it (a source that gives none shows none; a vague one such as "3 months ago" is shown as it says). Read
+chapters are dimmed and checked.
+
+- **Select:** long-press or right-click a chapter, then click others; the bar offers **All**, **Up to
+  here**, **Read** and **Unread**. The back key ends the selection.
+- **The `...` key** beside sort: **Select chapters**, **Mark all as read**, **Mark all as unread**.
+- **Continue** (bottom right) resumes an unfinished chapter or opens the first unread one; it hides when
+  everything is read. Marking chapters unread does not change AniList; marking them read raises it.
+
+## Discovering novels on AniList
+
+Novel Browse has two ways in, side by side: **Discover** (the default) and **Source**, the picked
+source's own Hot / Latest lists. Discover asks AniList for **novels only** (the NOVEL format) and needs no
+login or source to browse.
+
+- **Sorts** (the chips): Trending, Popular, Top rated, Favorites, Newest. A typed search is ordered by best
+  match instead, so no sort is lit while one is typed.
+- **Filters** (the tune key beside the search; its corner shows how many are on): **Genre**, **Tags**
+  (AniList's whole tag list, searchable; asked for once and kept a week in `readers/novel/al_tags.json`),
+  **Origin** (Japan = light novels, Korea / China = web novels, Taiwan), **Length** (up to 3 / 4-10 / 11+
+  volumes for light novels, up to 100 / 101-500 / 501+ chapters for web novels), **Status**, **Min score**,
+  **Max score**, **Year** and **18+**. Genre, Tags and Status can have several on. **Clear** switches them off.
+  A title AniList has no volume or chapter count for is left out while a Length is chosen.
+- **Opening a title.** AniList has no text to read, so a card opens its AniList page (cover, score, genres,
+  tags, description, authors, "AniList page" to open it in the browser). Under it the picked source is asked
+  for the title: the answers are listed closest first with the best marked, AniList's other names for the
+  title are chips that search the source again, and a box searches any other name. Picking one keeps that
+  AniList match for the novel (so tracking is on from the first chapter) and opens it like any novel of the
+  source; back from it lands on the page again, to try another match. With no source installed the page says
+  so and offers **Add sources**.
+
+Browse covers (Discover and Source) are built like the manga grid: the whole title over the foot of the art on a dark
+fade, with nothing written under it (the volumes and chapters are on the title's AniList page).
+
+A Discover cover wears AniList's average score at the top left (the one bright stamp) and where the novel
+is from at the top right, in two letters: **LN** (Japan, a light novel), **KR**, **CN**, **TW**. The long
+"LIGHT NOVEL" label was wider than the card and sat on top of the score.
+
+The backend routes are `/al/browse`, `/al/tags` and `/al/info` in `novel_server/` (answered to the panel only).
+
+## Tracking novels on AniList
+
+The novel reader tracks on AniList too, **novels only**: it searches AniList's NOVEL format only
+(light novels and web novels), and the backend refuses to track any title that is not a NOVEL, so a
+manga never lands on your list through it. Manga stay with the manga reader's own tracking.
+
+- **One login.** The login is the manga reader's: it runs the AniList login (the client ID, the
+  browser, the token) and keeps the token in `readers/manga/anilist_auth.json`; the novel backend
+  reads that file and never writes it. Log in once, in either reader. The **AniList key** in the
+  novel panel's header opens the AniList page: who is logged in, **Update as I read**, Log out, and
+  (while nobody is) the same steps as the manga reader's. The manga backend is only started for that
+  page when you open it to log in or out; while you read, only the novel backend runs. Logging out
+  there logs the manga reader out too.
+- **Matching.** A novel from the source is matched to an AniList novel by its name (a name at least
+  88 % alike, titles and synonyms), and the match is kept per source id in
+  `readers/novel/anilist_matches.json`. On a novel's page the chip next to Continue says
+  **Match AniList** when there is none (search AniList novels and pick), **Track** when it is matched
+  but not on your list, or **AniList · Reading 12** (opens the track sheet: status and chapters read,
+  **Wrong novel?** to change the match, Open on AniList).
+- **Update as I read.** A chapter counts as read once you are 90 % through it (at once, after a moment,
+  when it fits one screen); it is kept in `readers/novel/read.json`, and a moment later the highest
+  chapter number read goes to AniList. It only ever goes up (reading an old chapter again never lowers
+  it), a novel that was not on your list, or was Planning, Paused or Dropped, becomes Reading, and the
+  last chapter AniList knows makes it Completed. The track sheet may set anything. The reader says
+  "AniList updated" for a moment when a number was taken. The switch is `readers/novel/tracking.json`.
+- The endpoints (`/al/status`, `/al/match`, `/al/search`, `/al/match/set`, `/al/match/clear`,
+  `/al/track`, `/al/track/progress`, `/al/track/set`) answer the panel only: a request from a web page
+  (another Origin) or naming another host is refused, since they act as you.
+
+## A novel's page: stamps and Info
+
+The novel's title page is the manga one, with what AniList says:
+
+- **Stamps** beside the cover: the status (Ongoing, Completed, ...), the AniList score (`★ 8.2`), your own
+  score (`YOU ★ 9/10`, in the way your AniList account writes scores), the year and **TRACKED** when the
+  novel is on your list. The status falls back to the source's own word when AniList has no page for it.
+- **Info** (the key beside AniList in the strip under the stamps) slides a sheet down into the chapter
+  area and pushes the list ahead of it, like the manga panel's: Status (and the size once it is finished),
+  Released (`Mar 9, 2018 → now`), Type with the original language, Size, Authors; **Translation** (where it
+  is read from); **Ratings** (everyone's, readers and favourites, and yours); **Tracking** with Edit or Track;
+  other names, genres and tags. **Open on AniList** is in its header. A novel AniList has not matched
+  still shows the source's status, author, genres and where it is read from, and the sheet says how to
+  match it.
+- The match and AniList's page of a novel are public, so they are found **without a login**
+  (`/al/info`); only tracking and your own score need the login.
+
+The **Library** covers are built like the manga panel's Saved grid: the whole title over the foot of the art on
+a dark fade, the chapter you are at in the strip under it, and a small tag at the top right with the source the
+novel is read from (a saved novel keeps the source it was saved from). Nothing else is written on the art; the
+score, status, year and tracked stamps are on the novel's own page.
+
+## Novel sources (LNReader)
+
+The novel reader gets its sites from [LNReader](https://github.com/LNReader/lnreader)'s plugin
+repository, the same plugins the Android app uses, so the sites that app has are there, and new ones
+appear without a SekaiPop update.
+
+- **Source key** (beside the search in Browse): the source you are browsing, by name; a tap goes on to
+  the next installed source (`A → B → C → A`), and the second segment of the Discover / Source switch shows
+  the same name. With no source installed the key says **Add source** and opens the Sources page. The first
+  source you install is the one browsed.
+- **Filters key** (the tune key, right of the puzzle key): always there, like the manga panel's. The filters
+  are AniList's, so from the source's own lists the key goes back to Discover and opens them; the filter
+  list folds away while the source's lists show.
+- **Puzzle key** (extensions): opens the **Sources** page, with the manga panel's three tabs:
+    - **Extensions**: every plugin the repositories list, searchable (by name, language or site), with a
+      language key that goes through the languages the lists have, **Installed**, **Update all** (shown while
+      some installed source has a newer version) and **Refresh**. **Install**, **Update** and **Remove** on each
+      row; installed ones always show.
+    - **Sources**: the installed sources; **Use** switches to one (**In use** marks the one being browsed).
+      The novel panel browses one source at a time, so there is no automatic pick.
+    - **Repositories**: where the plugins come from, each a link to a `plugins.min.json`. Add one by pasting
+      its link; remove one with the bin key; **Add LNReader official list** brings the official one back.
+      Several can be on at once: the Extensions tab shows what they list together (a plugin id that two of
+      them list comes from the earlier one), and a repository that cannot be read is named in a line under the
+      tabs while the others still show. A new repository is read at once. Extensions are made by other
+      people and run on this computer, so add only repositories you trust.
+- **Hot** and **Latest** are the plugin's popular and latest lists; both load more as you scroll. Search
+  is the plugin's search. Genre and status filters of the old sources do not exist here.
+- The list of repositories is kept in `state.json` (`repos`; the official list is the entry `official`, the
+  newest release folder of the repository's `plugins` branch). An older `state.json` with one address in
+  `repo` becomes a list of that one address (empty: the official list). Backend routes: `GET /lnreader/repos`,
+  `POST /lnreader/repos` (`{add}` / `{remove}`), `POST /lnreader/update-all`; `POST /lnreader/repo` (one
+  address) still works.
+- It runs on **Node.js** (`nodejs` and `npm`): `scripts/readers/novel_server/lnreader_host.js` loads the
+  plugins and plays the part of the app's plugin runtime (`@libs/fetch`, `cheerio`, `htmlparser2`,
+  `dayjs`, `urlencode`, ...). The first time the novel panel opens, the server runs `npm install` for
+  those libraries by itself into `~/.local/share/sekaipop/readers/lnreader/` (the panel says so while it
+  works); `scripts/readers/setup-lnreader.sh` does the same by hand. A plugin's page requests go through
+  the Python server, so they use the same browser-like `curl_cffi` fetching as the other sources.
+- Installed plugins and the chosen source live in `~/.local/share/sekaipop/readers/lnreader/`
+  (`plugins/<id>.js`, `state.json`).
+- Library entries, favourites and downloads saved from FreeWebNovel, Chikari or NovelArrow still open
+  (their code stays in `providers/`, hidden from the Source key). Novels you add from now on belong to
+  the source they came from, so a novel's library entry works while that source is installed.
+- Plugins that need a module the host does not provide, or that ask for a login or WebView, will not
+  work; the error shown names what is missing.
 
 ## Files
 
@@ -379,10 +554,11 @@ modules/sekai/readers/
   ReaderChip.qml ReaderKey.qml ReaderBadge.qml ReaderBar.qml ReaderProgress.qml CoverCard.qml
   ReaderField.qml     a one-line text field (client ID, pasted token)
                       the parts built on the shell's Pill: keys, stamps, the floating bar, progress
-  manga/ novel/       their views (Browse, Detail, Library, Reader; manga also has FilterMenu,
+  manga/ novel/       their views (Browse, Detail, Library, Reader; novel also has DiscoverInfo, a Discover title's
+                      page; both have FilterMenu,
                       the list a filter key drops down, MatchPicker, the WeebCentral series picker, and
                       AniListLogin, the AniList account page, TrackSheet, a title's status and progress on it, and
-                      InfoPanel, the Info panel)
+                      InfoPanel, the Info panel; novel/InfoPanel.qml is the novel's own)
   Manga.qml Novel.qml the services: state, library file, backend process
   Colors.qml          the readers' Material 3 colour roles, worked out from Theme
   ReaderEnv.qml       where the backends are and which python runs them

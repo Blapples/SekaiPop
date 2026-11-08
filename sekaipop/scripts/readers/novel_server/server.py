@@ -23,10 +23,38 @@ Endpoints (unchanged from original):
   POST /dl/delete             body: {chapterId}
   GET  /health
 
+AniList tracking (novels only; the login is the manga reader's, see anilist.py):
+  GET  /al/status                     → {loggedIn, expired, viewer}
+  GET  /al/match?novelId=&title=      → {match: {anilistId, title, manual} | null}
+  GET  /al/search?q=<text>            → [{anilistId, title, cover, year, chapters, volumes, status, siteUrl}]
+  GET  /al/browse?q=&genres=a,b&tags=a|b&country=&status=a,b&year=&score_min=&score_max=
+                  &vol_min=&vol_max=&ch_min=&ch_max=&sort=&adult=0&page=1
+                                      → {results, hasMore, nextPage}  (Discover: AniList novels, no login)
+  GET  /al/tags                       → {tags: [{name, category, isAdult}]}  (for the tag filter)
+  GET  /al/info?id=<anilistId>        → one novel's page (description, tags, names to search a source by)
+  POST /al/match/set    body: {novelId, anilistId, title}
+  POST /al/match/clear  body: {novelId}
+  GET  /al/track?id=<anilistId>       → {anilistId, chapters, volumes, siteUrl, entry}
+  POST /al/track/progress  body: {anilistId, progress, volumes}   (only ever goes up)
+  POST /al/track/set       body: {anilistId, status, progress, volumes}
+
 Provider-switching endpoints (new):
   GET  /provider/list         → [{name, label}, ...]
   GET  /provider/active       → {name, label}
-  POST /provider/switch       body: {provider: "freewebnovel"}
+  POST /provider/switch       body: {provider: "lnreader"}
+
+LNReader sources (the plugins the reader browses):
+  GET  /lnreader/status       → {node: {state, message}, repo, active, sources}
+  GET  /lnreader/sources      → {active, sources: [{id, name, lang, site, version, iconUrl}]}
+  GET  /lnreader/catalog?refresh=1   → {repo, total, plugins: [... installed, update]}
+  POST /lnreader/install      body: {id}
+  POST /lnreader/uninstall    body: {id}
+  POST /lnreader/select       body: {id}
+  POST /lnreader/repo         body: {url}   ("" goes back to the official list); the one-address call
+  GET  /lnreader/repos        → {repos: [{id, name, official}], suggested: [{name, url}]}
+  POST /lnreader/repos        body: {add: url} and/or {remove: id}   ("official" is the official list)
+  POST /lnreader/update-all   → {ok, updated, failed: [{id, error}]}
+  GET  /hot?page=<n>          → {results, hasMore, nextPage} (without page: the plain list, as before)
 
 All novel/chapter IDs crossing the HTTP boundary are PREFIXED:
   "freewebnovel:novel/some-slug"
@@ -42,8 +70,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, parse_qs, quote, unquote
 
+import anilist
 import providers
 import storage
+from providers.lnreader import LNReaderProvider
 
 PORT = 5151
 
@@ -127,6 +157,23 @@ class Handler(BaseHTTPRequestHandler):
     def _error(self, msg, status=500):
         self._json({"error": msg}, status)
 
+    def _local_only(self):
+        """The AniList endpoints answer the panel only: they act as the logged-in user, so a
+        request that names another host (DNS rebinding) or comes from a web page (an Origin
+        other than this server) is refused."""
+        host   = (self.headers.get("Host") or "").rsplit(":", 1)[0].lower()
+        origin = self.headers.get("Origin")
+        ok = host in ("127.0.0.1", "localhost") and (
+            not origin or origin in (f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"))
+        if not ok:
+            body = json.dumps({"error": "not allowed"}).encode()
+            self.send_response(403)
+            self.send_header("Content-Type",   "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        return ok
+
     def _send_image(self, body, ctype):
         self.send_response(200)
         self.send_header("Content-Type",   ctype)
@@ -182,8 +229,30 @@ class Handler(BaseHTTPRequestHandler):
 
             # ── Novel browsing ───────────────────────────────────────────
             elif p == "/hot":
-                data = prv.hot()
-                self._json(_prefix_results(data, pn))
+                if "page" in qs:
+                    page = int(param("page", "1"))
+                    if hasattr(prv, "hot_page"):
+                        data = prv.hot_page(page)
+                    else:
+                        data = {"results": prv.hot() if page == 1 else [],
+                                "hasMore": False, "nextPage": page + 1}
+                    data["results"] = _prefix_results(data["results"], pn)
+                    self._json(data)
+                else:
+                    self._json(_prefix_results(prv.hot(), pn))
+
+            # ── LNReader sources ─────────────────────────────────────────
+            elif p == "/lnreader/status":
+                self._json(LNReaderProvider().status())
+
+            elif p == "/lnreader/sources":
+                self._json(LNReaderProvider().sources())
+
+            elif p == "/lnreader/catalog":
+                self._json(LNReaderProvider().catalog(param("refresh") == "1"))
+
+            elif p == "/lnreader/repos":
+                self._json(LNReaderProvider().repos())
 
             elif p == "/latest":
                 data = prv.latest(int(param("page", "1")))
@@ -252,6 +321,41 @@ class Handler(BaseHTTPRequestHandler):
                     return self._error("not downloaded", 404)
                 self._json(data)
 
+            # ── AniList (novels only) ────────────────────────────────────
+            elif p.startswith("/al/"):
+                if not self._local_only():
+                    return
+                if p == "/al/status":
+                    self._json(anilist.status())
+                elif p == "/al/match":
+                    self._json(anilist.match_get(param("novelId"), param("title")))
+                elif p == "/al/search":
+                    self._json(anilist.search(param("q")))
+                elif p == "/al/browse":
+                    def _int(name):
+                        v = param(name, "0")
+                        return int(v) if v.lstrip("-").isdigit() else 0
+                    self._json(anilist.browse(
+                        q=param("q"),
+                        genres=[g for g in param("genres").split(",") if g],
+                        tags=[t for t in param("tags").split("|") if t],
+                        country=param("country"), status=param("status"),
+                        year=_int("year"), sort=param("sort"), adult=param("adult") == "1",
+                        page=max(1, _int("page")),
+                        score_min=_int("score_min"), score_max=_int("score_max"),
+                        vol_min=_int("vol_min"), vol_max=_int("vol_max"),
+                        ch_min=_int("ch_min"), ch_max=_int("ch_max"),
+                        img=proxy_url))
+                elif p == "/al/tags":
+                    self._json(anilist.tags())
+                elif p == "/al/info":
+                    data = anilist.info(param("id"))
+                    self._json(dict(data, image=proxy_url(data["cover"]) if data.get("cover") else ""))
+                elif p == "/al/track":
+                    self._json(anilist.track_info(param("id")))
+                else:
+                    self._error("not found", 404)
+
             elif p == "/health":
                 self._json({"ok": True, "provider": pn})
 
@@ -260,6 +364,8 @@ class Handler(BaseHTTPRequestHandler):
 
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except anilist.AlError as e:
+            self._error(str(e), e.status)
         except ValueError as e:
             self._error(str(e), 400)
         except Exception as e:
@@ -287,6 +393,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self._error("missing provider", 400)
                 providers.switch(name)
                 self._json({"ok": True, "active": name})
+
+            # ── LNReader sources ─────────────────────────────────────────
+            elif p == "/lnreader/install":
+                self._json(LNReaderProvider().install(body.get("id", "")))
+
+            elif p == "/lnreader/uninstall":
+                self._json(LNReaderProvider().uninstall(body.get("id", "")))
+
+            elif p == "/lnreader/select":
+                self._json(LNReaderProvider().select(body.get("id", "")))
+
+            elif p == "/lnreader/repo":
+                self._json(LNReaderProvider().set_repo(body.get("url", "")))
+
+            elif p == "/lnreader/repos":
+                self._json(LNReaderProvider().change_repos(body.get("add", ""), body.get("remove", "")))
+
+            elif p == "/lnreader/update-all":
+                self._json(LNReaderProvider().update_all())
 
             # ── Favorites ────────────────────────────────────────────────
             elif p == "/favorites/add":
@@ -328,11 +453,31 @@ class Handler(BaseHTTPRequestHandler):
                     return self._error("missing chapterId", 400)
                 self._json(storage.dl_remove(cid))
 
+            # ── AniList (novels only) ────────────────────────────────────
+            elif p.startswith("/al/"):
+                if not self._local_only():
+                    return
+                if p == "/al/match/set":
+                    self._json(anilist.match_set(body.get("novelId", ""), body.get("anilistId"),
+                                                 body.get("title", "")))
+                elif p == "/al/match/clear":
+                    self._json(anilist.match_clear(body.get("novelId", "")))
+                elif p == "/al/track/progress":
+                    self._json(anilist.track_progress(body.get("anilistId"), body.get("progress"),
+                                                      body.get("volumes")))
+                elif p == "/al/track/set":
+                    self._json(anilist.track_set(body.get("anilistId"), body.get("status"),
+                                                 body.get("progress"), body.get("volumes")))
+                else:
+                    self._error("not found", 404)
+
             else:
                 self._error("not found", 404)
 
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except anilist.AlError as e:
+            self._error(str(e), e.status)
         except ValueError as e:
             self._error(str(e), 400)
         except Exception as e:
@@ -358,6 +503,7 @@ def exit_with_parent():
 
 def run():
     exit_with_parent()
+    LNReaderProvider().bootstrap()
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"[novel-server] Listening on http://127.0.0.1:{PORT}")
     print(f"[novel-server] Active provider: {providers.active_name()}")

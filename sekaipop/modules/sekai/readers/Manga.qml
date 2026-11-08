@@ -733,6 +733,11 @@ Singleton {
     // ever moves AniList's number up. Works for a title opened from the AniList browse (the ones
     // that have an AniList id). `trackAuto` is the "update as I read" switch (AniList page).
     property bool trackAuto: true
+    // "Mark read from AniList": a title already begun on the list opens with its chapters up to
+    // AniList's number marked read. Done once per time a title is opened (_adoptedFor), so a
+    // chapter you then mark unread stays unread.
+    property bool trackAdopt: true
+    property string _adoptedFor: ""
     // { anilistId, chapters, volumes, siteUrl, entry: { status, score, score100, progress, progressVolumes } | null }
     property var  trackInfo: null
     property bool trackBusy: false
@@ -775,10 +780,11 @@ Singleton {
         onLoaded: {
             try {
                 const d = JSON.parse(trackFile.text())
-                root.trackAuto = !(d && d.auto === false)
-            } catch (e) { root.trackAuto = true }
+                root.trackAuto  = !(d && d.auto === false)
+                root.trackAdopt = !(d && d.adopt === false)
+            } catch (e) { root.trackAuto = true; root.trackAdopt = true }
         }
-        onLoadFailed: root.trackAuto = true
+        onLoadFailed: { root.trackAuto = true; root.trackAdopt = true }
     }
 
     FileView {
@@ -786,10 +792,34 @@ Singleton {
         path: root._trackPath
     }
 
+    function _saveTrackPrefs() {
+        trackWriter.setText(JSON.stringify({ auto: trackAuto, adopt: trackAdopt }))
+    }
+
     function setTrackAuto(v) {
         trackAuto = v === true
-        trackWriter.setText(JSON.stringify({ auto: trackAuto }))
+        _saveTrackPrefs()
         if (trackAuto) trackSoon()
+    }
+
+    function setTrackAdopt(v) {
+        trackAdopt = v === true
+        _saveTrackPrefs()
+        if (trackAdopt) trackAdoptRead()
+    }
+
+    // Marks read the chapters of the open title that AniList already counts as read (its
+    // progress, and progressVolumes for volume releases). Only ever marks, never unmarks. It
+    // waits for the title's chapter list, and runs once per opening of the title.
+    function trackAdoptRead() {
+        if (!trackAdopt || !trackKnown || trackEntry === null || !currentManga) return
+        const chapters = currentManga.chapters || []
+        if (chapters.length === 0) return
+        const key = String(currentManga.id)
+        if (_adoptedFor === key) return
+        _adoptedFor = key
+        const ids = RM.chaptersUpTo(chapters, trackEntry.progress || 0, trackEntry.progressVolumes || 0)
+        if (ids.length > 0) setChaptersRead(ids, true)
     }
 
     function _trackApply(body) {
@@ -817,7 +847,7 @@ Singleton {
         const aid = currentManga.anilistId
         Http.get(root.apiUrl + "/al/track?id=" + aid, function(err, body, raw) {
             if (err) { _trackFailed(err, raw); return }
-            if (currentManga && currentManga.anilistId === aid) _trackApply(body)
+            if (currentManga && currentManga.anilistId === aid && _trackApply(body)) trackAdoptRead()
         })
     }
 
@@ -1394,6 +1424,7 @@ Singleton {
         if (autoContinueId.length > 0 && autoContinueId !== mangaId) autoContinueId = ""
         if (isFetchingDetail) return
         isFetchingDetail = true
+        _adoptedFor = ""
         if (!keep) currentManga = null
         detailError = ""
         const url = mangaId.indexOf("al:") === 0

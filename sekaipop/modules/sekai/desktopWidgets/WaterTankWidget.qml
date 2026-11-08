@@ -16,9 +16,10 @@ import qs.modules.sekai.editMode
 //   1 x 1  ONE glass key (WaterTile.qml): the water, a droplet chip, the goal, the count as a sticker
 //          numeral. Click: +1 (it squashes, a puff of diamonds). Wheel up +1, wheel down -1.
 //          At the goal the droplet turns into a check and a bigger burst flies.
-//   2 x 2  (the clock's / user card's footprint) the tall glass with a tick for every glass of the goal and
-//          the count, the litres, a - and a + key, the last seven days as small tanks, and the streak
-//          (days in a row the goal was reached).
+//   2 x 2  (the clock's / user card's footprint) the title tab and the streak (days in a row the goal was
+//          reached) along the top; under them the glass (a tick for every glass of the goal, the count)
+//          beside the amount in litres and a - and a + key; and the last seven days as a row of tanks
+//          along the foot (a day that reached the goal wears a diamond).
 //
 // The numbers (today's glasses, the goal, the glass size, the last days) live in
 // services/WaterTankService.qml and are remembered across restarts; the count starts again at 0
@@ -614,7 +615,7 @@ PanelWindow {
                         }
                     }
 
-                    // ===== 2 x 2: the tall glass, the keys, the week and the streak =====
+                    // ===== 2 x 2: the glass and the count, the keys, the week and the streak =====
                     Component {
                         id: fullFace
 
@@ -641,16 +642,90 @@ PanelWindow {
                                 NumberAnimation { duration: 820; easing.type: Easing.OutBack; easing.overshoot: 1.5 }
                             }
 
-                            // ===== the tall glass =====
+                            // ===== the title row: the tab on the left, the streak on the right =====
+                            Slant {
+                                id: titleTab
+                                x: 2
+                                y: 0
+                                width: 104
+                                height: 26
+                                skew: 0.2
+                                radius: 9
+                                color: mt.chipFill
+                                borderColor: mt.pLine
+                                borderWidth: 3
+                            }
+
+                            // Text goes NEXT to the Slant (a child would lean with it).
+                            Row {
+                                x: titleTab.x + titleTab.lean / 2 + 10
+                                y: titleTab.y
+                                height: titleTab.height
+                                spacing: 5
+
+                                MaterialIcon {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    name: "water_drop"
+                                    fill: 0
+                                    size: 15
+                                    weight: 700
+                                    color: mt.dark ? mt.accentMint : mt.colBorder
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "WATER"
+                                    color: mt.chipInk
+                                    font.family: mt.fontFamily
+                                    font.pixelSize: 11
+                                    font.weight: Font.ExtraBold
+                                    font.styleName: mt.fontStyleBold
+                                    font.letterSpacing: 1.6
+                                }
+                            }
+
+                            // The streak: days in a row the goal was reached. Lit (mint flame) once there is one.
+                            Row {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 2
+                                y: 0
+                                height: 26
+                                spacing: 5
+
+                                MaterialIcon {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    name: "flame"
+                                    fill: 0
+                                    size: 18
+                                    weight: 700
+                                    color: win.streak > 0 ? (mt.dark ? mt.accentMint : mt.colBorder) : Qt.rgba(mt.pInk.r, mt.pInk.g, mt.pInk.b, 0.45)
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: win.streak > 0 ? win.streak + " DAY STREAK" : "NO STREAK YET"
+                                    color: mt.pInk
+                                    opacity: win.streak > 0 ? 1 : 0.7
+                                    font.family: mt.fontFamily
+                                    font.pixelSize: 11
+                                    font.weight: Font.ExtraBold
+                                    font.styleName: mt.fontStyleBold
+                                    font.letterSpacing: 1.0
+                                }
+                            }
+
+                            // ===== the glass: the water, a tick for every glass of the goal, the count =====
                             Pill {
                                 id: glass
                                 x: 0
-                                y: 0
-                                width: 118
-                                height: face.height
+                                y: 32
+                                width: 132
+                                height: 122
                                 cornerRadius: 30
                                 ringWidth: mt.borderWidth + mt.whiteLine
                                 fillColor: mt.pSurface
+                                fillGradient: Gradient {
+                                    GradientStop { position: 0.0; color: mt.pSurface }
+                                    GradientStop { position: 1.0; color: Qt.tint(mt.pSurface, Qt.rgba(mt.accentCyan.r, mt.accentCyan.g, mt.accentCyan.b, 0.18)) }
+                                }
 
                                 property real sx: 1
                                 property real sy: 1
@@ -671,8 +746,8 @@ PanelWindow {
 
                                 // The goal, at the top ("GOAL!" once it is reached).
                                 Pill {
-                                    x: (parent.width - width) / 2
-                                    y: 10
+                                    x: (parent.width - width) / 2 - 6
+                                    y: 8
                                     width: goalLabel.implicitWidth + 24
                                     height: 27
                                     shadowDy: 3
@@ -695,36 +770,12 @@ PanelWindow {
 
                                 // The glasses you have had, in the middle, over the water.
                                 StickerText {
-                                    x: (parent.width - width) / 2
-                                    y: (parent.height - height) / 2
+                                    x: (parent.width - width) / 2 - 6
+                                    y: (parent.height - height) / 2 + 12
                                     text: String(WaterTankService.glasses)
-                                    pixelSize: String(WaterTankService.glasses).length <= 1 ? 78 : 60
+                                    pixelSize: String(WaterTankService.glasses).length <= 1 ? 72 : 56
                                     fillColor: Qt.darker(mt.colBorder, 1.8)
                                     ringColor: "#ffffff"
-                                }
-
-                                // The amount, at the bottom.
-                                Pill {
-                                    x: (parent.width - width) / 2
-                                    y: parent.height - height - 10
-                                    width: amountLabel.implicitWidth + 24
-                                    height: 27
-                                    shadowDy: 3
-                                    cornerRadius: 12
-                                    ringWidth: mt.borderWidth + mt.whiteLine
-                                    fillColor: mt.chipFill
-
-                                    Text {
-                                        id: amountLabel
-                                        anchors.centerIn: parent
-                                        text: WaterTankService.amountText.toUpperCase()
-                                        color: mt.chipInk
-                                        font.family: mt.fontFamily
-                                        font.pixelSize: 11
-                                        font.weight: Font.ExtraBold
-                                        font.styleName: mt.fontStyleBold
-                                        font.letterSpacing: 1.0
-                                    }
                                 }
                             }
 
@@ -757,67 +808,41 @@ PanelWindow {
                                 size: 11
                             }
 
-                            // ===== the right side =====
+                            // ===== the right side: how much, and the two keys =====
                             Item {
                                 id: side
-                                x: 130
-                                y: 0
-                                width: face.width - 130
-                                height: face.height
+                                x: 144
+                                y: 32
+                                width: face.width - 144
+                                height: 122
 
-                                // The title tab: a droplet and "WATER".
-                                Slant {
-                                    id: titleTab
-                                    x: 2
-                                    y: 0
-                                    width: 104
-                                    height: 26
-                                    skew: 0.2
-                                    radius: 9
-                                    color: mt.chipFill
-                                    borderColor: mt.pLine
-                                    borderWidth: 3
-                                }
-
-                                // Text goes NEXT to the Slant (a child would lean with it).
-                                Row {
-                                    x: titleTab.x + titleTab.lean / 2 + 10
-                                    y: titleTab.y
-                                    height: titleTab.height
-                                    spacing: 5
-
-                                    MaterialIcon {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        name: "water_drop"
-                                        fill: 0
-                                        size: 15
-                                        weight: 700
-                                        color: mt.dark ? mt.accentMint : mt.colBorder
-                                    }
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: "WATER"
-                                        color: mt.chipInk
-                                        font.family: mt.fontFamily
-                                        font.pixelSize: 11
-                                        font.weight: Font.ExtraBold
-                                        font.styleName: mt.fontStyleBold
-                                        font.letterSpacing: 1.6
-                                    }
-                                }
-
-                                // How much, of how much.
+                                // How much you have had, big; of how much, small under it.
                                 Text {
                                     x: 2
-                                    y: 34
+                                    y: 0
                                     width: side.width - 4
                                     elide: Text.ElideRight
-                                    text: WaterTankService.amountText + " of " + WaterTankService.goalText
+                                    text: WaterTankService.amountText.toUpperCase()
                                     color: mt.pInk
                                     font.family: mt.fontFamily
-                                    font.pixelSize: 15
+                                    font.pixelSize: 24
                                     font.weight: Font.ExtraBold
                                     font.styleName: mt.fontStyleBold
+                                }
+
+                                Text {
+                                    x: 2
+                                    y: 30
+                                    width: side.width - 4
+                                    elide: Text.ElideRight
+                                    text: "OF " + WaterTankService.goalText.toUpperCase() + " TODAY"
+                                    color: mt.pInk
+                                    opacity: 0.75
+                                    font.family: mt.fontFamily
+                                    font.pixelSize: 11
+                                    font.weight: Font.ExtraBold
+                                    font.styleName: mt.fontStyleBold
+                                    font.letterSpacing: 1.2
                                 }
 
                                 // ===== the keys: take one back, drink one =====
@@ -825,16 +850,17 @@ PanelWindow {
                                     id: minusKey
                                     x: 0
                                     y: 62
-                                    width: 58
-                                    height: 48
+                                    width: 56
+                                    height: 60
                                     shadowDy: 4
-                                    cornerRadius: 16
+                                    cornerRadius: 18
                                     ringWidth: mt.borderWidth + mt.whiteLine
                                     fillColor: mt.chipFill
                                     pressed: minusArea.pressed
 
                                     MaterialIcon {
                                         anchors.centerIn: parent
+                                        anchors.verticalCenterOffset: -1
                                         name: "remove"
                                         size: 26
                                         color: mt.chipInk
@@ -851,20 +877,21 @@ PanelWindow {
 
                                 Pill {
                                     id: plusKey
-                                    x: 66
+                                    x: 64
                                     y: 62
-                                    width: side.width - 66
-                                    height: 48
+                                    width: side.width - 64
+                                    height: 60
                                     shadowDy: 4
-                                    cornerRadius: 16
+                                    cornerRadius: 18
                                     ringWidth: mt.borderWidth + mt.whiteLine
                                     fillColor: mt.accentMint
                                     pressed: plusArea.pressed
 
                                     MaterialIcon {
                                         anchors.centerIn: parent
+                                        anchors.verticalCenterOffset: -1
                                         name: "add"
-                                        size: 30
+                                        size: 36
                                         color: mt.colBorder
                                     }
 
@@ -876,86 +903,74 @@ PanelWindow {
                                         onClicked: WaterTankService.addGlass()
                                     }
                                 }
+                            }
 
-                                // ===== the last seven days, today on the right =====
-                                Row {
-                                    id: weekRow
-                                    x: 0
-                                    y: 126
-                                    spacing: 3
+                            // ===== the last seven days, today on the right =====
+                            Row {
+                                id: weekRow
+                                x: 2
+                                y: 168
+                                spacing: 6
 
-                                    Repeater {
-                                        model: win.bars
+                                Repeater {
+                                    model: win.bars
 
-                                        delegate: Item {
-                                            id: dayCol
-                                            required property var modelData
+                                    delegate: Item {
+                                        id: dayCol
+                                        required property var modelData
 
-                                            width: Math.floor((side.width - 18) / 7)
-                                            height: 70
+                                        readonly property real frac: WTM.fraction(dayCol.modelData.count, WaterTankService.goal)
+
+                                        width: Math.floor((face.width - 4 - 36) / 7)
+                                        height: 68
+
+                                        Rectangle {
+                                            id: track
+                                            width: parent.width
+                                            height: 46
+                                            radius: 11
+                                            color: Qt.rgba(mt.pInk.r, mt.pInk.g, mt.pInk.b, 0.14)
+                                            border.width: 2
+                                            border.color: dayCol.modelData.today ? mt.accentMint : Qt.rgba(mt.pInk.r, mt.pInk.g, mt.pInk.b, 0.35)
+                                            antialiasing: true
 
                                             Rectangle {
-                                                id: track
-                                                width: parent.width
-                                                height: 52
-                                                radius: 8
-                                                color: Qt.rgba(mt.pInk.r, mt.pInk.g, mt.pInk.b, 0.12)
-                                                border.width: 2
-                                                border.color: dayCol.modelData.today ? mt.accentMint : mt.pLine
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.bottom: parent.bottom
+                                                anchors.margins: 2
+                                                height: dayCol.modelData.count > 0 ? Math.max(8, (track.height - 4) * dayCol.frac) : 0
+                                                radius: 9
+                                                color: (dayCol.modelData.today || dayCol.frac >= 1) ? mt.accentMint : Qt.rgba(mt.accentCyan.r, mt.accentCyan.g, mt.accentCyan.b, 0.85)
                                                 antialiasing: true
-
-                                                Rectangle {
-                                                    anchors.left: parent.left
-                                                    anchors.right: parent.right
-                                                    anchors.bottom: parent.bottom
-                                                    anchors.margins: 2
-                                                    height: Math.max(0, (track.height - 4) * WTM.fraction(dayCol.modelData.count, WaterTankService.goal))
-                                                    radius: 6
-                                                    color: dayCol.modelData.today ? mt.accentMint : Qt.rgba(mt.accentCyan.r, mt.accentCyan.g, mt.accentCyan.b, 0.8)
-                                                    antialiasing: true
-                                                }
                                             }
 
-                                            Text {
-                                                anchors.top: track.bottom
-                                                anchors.topMargin: 4
+                                            // A day that reached the goal wears a small diamond.
+                                            Rectangle {
+                                                visible: dayCol.frac >= 1
                                                 anchors.horizontalCenter: parent.horizontalCenter
-                                                text: Qt.locale().dayName(dayCol.modelData.weekday, Locale.NarrowFormat).toUpperCase()
-                                                color: mt.pInk
-                                                opacity: dayCol.modelData.today ? 1 : 0.6
-                                                font.family: mt.fontFamily
-                                                font.pixelSize: 10
-                                                font.weight: dayCol.modelData.today ? Font.ExtraBold : Font.DemiBold
-                                                font.styleName: mt.fontStyleBold
+                                                y: 9
+                                                width: 7
+                                                height: 7
+                                                radius: 1.5
+                                                rotation: 45
+                                                color: mt.colBorder
+                                                antialiasing: true
                                             }
                                         }
-                                    }
-                                }
 
-                                // ===== the streak =====
-                                Row {
-                                    x: 2
-                                    y: side.height - height - 2
-                                    spacing: 6
-
-                                    MaterialIcon {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        name: "flame"
-                                        fill: 0
-                                        size: 18
-                                        weight: 700
-                                        color: win.streak > 0 ? mt.pInk : Qt.rgba(mt.pInk.r, mt.pInk.g, mt.pInk.b, 0.4)
-                                    }
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: win.streak > 0 ? win.streak + (win.streak === 1 ? " DAY" : " DAYS") + " IN A ROW" : "NO STREAK YET"
-                                        color: mt.pInk
-                                        opacity: win.streak > 0 ? 1 : 0.55
-                                        font.family: mt.fontFamily
-                                        font.pixelSize: 11
-                                        font.weight: Font.ExtraBold
-                                        font.styleName: mt.fontStyleBold
-                                        font.letterSpacing: 1.0
+                                        Text {
+                                            anchors.top: track.bottom
+                                            anchors.topMargin: 5
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            text: Qt.locale().dayName(dayCol.modelData.weekday, Locale.NarrowFormat).toUpperCase()
+                                            color: mt.pInk
+                                            opacity: dayCol.modelData.today ? 1 : 0.7
+                                            font.family: mt.fontFamily
+                                            font.pixelSize: 11
+                                            font.weight: dayCol.modelData.today ? Font.ExtraBold : Font.DemiBold
+                                            font.styleName: mt.fontStyleBold
+                                        }
                                     }
                                 }
                             }

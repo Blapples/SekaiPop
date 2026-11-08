@@ -5,8 +5,8 @@ Provider registry.
 Usage (in server.py):
     import providers
     providers.get()          → active NovelProvider instance
-    providers.switch("freewebnovel")
-    providers.list_all()     → [{"name": "freewebnovel", "label": "FreeWebNovel"}, ...]
+    providers.switch("lnreader")
+    providers.list_all()     → [{"name": "lnreader", "label": "LNReader"}]
     providers.active_name()  → "freewebnovel"
 
 ID namespacing
@@ -25,19 +25,26 @@ import threading
 from .freewebnovel import FreeWebNovelProvider
 from .chikari import ChikariProvider
 from .novelarrow import NovelArrowProvider
+from .lnreader import LNReaderProvider
 
 from .base import NovelProvider
 
 # ── Registry ───────────────────────────────────────────────────────────────
 # Add new providers here: name → class
 _REGISTRY: dict[str, type[NovelProvider]] = {
+    "lnreader":     LNReaderProvider,
     "freewebnovel": FreeWebNovelProvider,
     "chikari":      ChikariProvider,
     "novelarrow":   NovelArrowProvider,
 }
 
+# The reader's sources are LNReader plugins now. The three scrapers stay registered only so that
+# library entries, favourites and downloads saved under their prefixes still open; they are not
+# offered in list_all() and nothing switches to them.
+LEGACY = {"freewebnovel", "chikari", "novelarrow"}
+
 _lock   = threading.Lock()
-_active: NovelProvider = FreeWebNovelProvider()   # default on startup
+_active: NovelProvider = LNReaderProvider()       # default on startup
 
 
 # ── Public API ─────────────────────────────────────────────────────────────
@@ -67,6 +74,7 @@ def list_all() -> list[dict]:
     return [
         {"name": cls.name, "label": cls.label}
         for cls in _REGISTRY.values()
+        if cls.name not in LEGACY
     ]
 
 

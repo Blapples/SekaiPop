@@ -58,6 +58,24 @@ Singleton {
     // Say nothing in the middle when a song has no synced lyrics or is an instrumental (the
     // track title under the card stays). ipc lyrics hideNotes on|off
     property bool hideNotes: false
+    // Whole screen: the lyrics as kinetic typography over the entire desktop
+    // (modules/sekai/desktopWidgets/LyricsKinetic.qml) instead of the card. ipc lyrics kinetic on|off
+    property bool kinetic: false
+    // How dark the vignette behind the kinetic lyrics is (0 = none, up to 0.85), so the words
+    // read on a bright wallpaper. ipc lyrics dim 0.5
+    property real kineticDim: 0.45
+    // The colours of the kinetic lyrics: "theme" (the active theme's accents, so matugen, a
+    // group palette and a monitor's own theme all re-colour it), "sekai" (the five attribute
+    // pastels) or "accent" (just the theme's two accents). ipc lyrics colors theme|sekai|accent
+    property string kineticColors: "theme"
+    // "drift": the camera moves very slowly over each line; "still": it does not move at all.
+    // (Nothing pulses with the words either way.) ipc lyrics camera still|drift
+    property string kineticCamera: "drift"
+    // The look of the whole-screen lyrics: "poster" (a composition for every line, words slam in),
+    // "wall" (the whole song on one huge wall, the camera flies from line to line) or "marquee"
+    // (rows of giant type scrolling in turns). ipc lyrics style poster|wall|marquee
+    property string kineticStyle: "poster"
+    readonly property var kineticStyles: ["poster", "wall", "marquee"]
     // "auto" (the best provider for each song) or one provider's id to use whenever it has the song.
     property string preferred: "auto"
     // The same, for single tracks: a lyrics file is made for one cut of a song, so one track
@@ -225,6 +243,42 @@ Singleton {
     }
     function setHideNotes(on) {
         root.hideNotes = on === true
+        root.persist()
+    }
+    function setKinetic(on) {
+        root.kinetic = on === true
+        root.persist()
+    }
+    function setKineticColors(mode) {
+        if (mode !== "theme" && mode !== "sekai" && mode !== "accent")
+            return false
+        root.kineticColors = mode
+        root.persist()
+        return true
+    }
+    function setKineticCamera(mode) {
+        if (mode !== "still" && mode !== "drift")
+            return false
+        root.kineticCamera = mode
+        root.persist()
+        return true
+    }
+    function setKineticStyle(mode) {
+        if (root.kineticStyles.indexOf(mode) < 0)
+            return false
+        root.kineticStyle = mode
+        root.persist()
+        return true
+    }
+    // The next look (a key that goes round them); returns the one now on.
+    function cycleKineticStyle() {
+        const i = root.kineticStyles.indexOf(root.kineticStyle)
+        root.setKineticStyle(root.kineticStyles[(i + 1) % root.kineticStyles.length])
+        return root.kineticStyle
+    }
+    function setKineticDim(v) {
+        const n = Number(v)
+        root.kineticDim = isFinite(n) ? Math.max(0, Math.min(0.85, n)) : 0.45
         root.persist()
     }
     function setSync(ms) {
@@ -1199,6 +1253,11 @@ Singleton {
             syncMs: root.syncMs,
             wordsOn: root.wordsOn,
             hideNotes: root.hideNotes,
+            kinetic: root.kinetic,
+            kineticDim: root.kineticDim,
+            kineticColors: root.kineticColors,
+            kineticCamera: root.kineticCamera,
+            kineticStyle: root.kineticStyle,
             source: root.preferred,
             offsets: root.offsets
         })
@@ -1224,6 +1283,16 @@ Singleton {
                 root.wordsOn = false
             if (typeof s.hideNotes === "boolean")
                 root.hideNotes = s.hideNotes
+            if (typeof s.kinetic === "boolean")
+                root.kinetic = s.kinetic
+            if (s.kineticColors === "theme" || s.kineticColors === "sekai" || s.kineticColors === "accent")
+                root.kineticColors = s.kineticColors
+            if (s.kineticCamera === "still" || s.kineticCamera === "drift")
+                root.kineticCamera = s.kineticCamera
+            if (root.kineticStyles.indexOf(s.kineticStyle) >= 0)
+                root.kineticStyle = s.kineticStyle
+            if (typeof s.kineticDim === "number" && isFinite(s.kineticDim))
+                root.kineticDim = Math.max(0, Math.min(0.85, s.kineticDim))
             if (typeof s.source === "string" && (s.source === "auto" || root.providerIds.indexOf(s.source) >= 0))
                 root.preferred = s.source
             if (typeof s.syncMs === "number")

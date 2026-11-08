@@ -61,11 +61,26 @@ def _get(url: str, headers: dict, timeout: int, attempts: int = 3, data=None):
             _pool.append(s)
         return r
 
+def _accept_encoding() -> str:
+    """Only offer brotli when this client can decode it. curl_cffi (libcurl) can; plain `requests`
+    can only with the brotli module, and a server that honours "br" (Cloudflare does) would
+    otherwise hand back raw brotli bytes: every page a plugin fetches would parse as garbage."""
+    if _USE_CFFI:
+        return "gzip, deflate, br"
+    for mod in ("brotli", "brotlicffi"):
+        try:
+            __import__(mod)
+            return "gzip, deflate, br"
+        except ImportError:
+            pass
+    return "gzip, deflate"
+
+
 BASE_HEADERS = {
     "User-Agent":                "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
     "Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language":           "en-US,en;q=0.5",
-    "Accept-Encoding":           "gzip, deflate, br",
+    "Accept-Encoding":           _accept_encoding(),
     "Connection":                "keep-alive",
     "Upgrade-Insecure-Requests": "1",
     "Sec-Fetch-Dest":            "document",
@@ -151,6 +166,36 @@ def fetch_bytes(url: str, timeout: int = 30) -> tuple[bytes, str]:
     r = _get(url, BASE_HEADERS, timeout)
     r.raise_for_status()
     return r.content, r.headers.get("Content-Type", "image/jpeg")
+
+
+def request(method: str, url: str, headers: dict | None = None, body: bytes | None = None,
+            timeout: int = 30) -> tuple[int, dict, bytes, str]:
+    """One HTTP request for an LNReader plugin: (status, headers, body bytes, final url).
+    Unlike fetch() it never raises on an HTTP error status (the plugin decides what a 404 means),
+    only on a connection failure. Only GET and POST are supported. The body comes back already
+    decoded, so the encoding headers are dropped. A 429 is waited out and retried a few times."""
+    method = method.upper()
+    if method not in ("GET", "POST"):
+        raise ValueError(f"unsupported method {method}")
+    merged = dict(BASE_HEADERS)
+    for k, v in (headers or {}).items():
+        for existing in [e for e in merged if e.lower() == k.lower()]:
+            del merged[existing]
+        merged[k] = v
+    data = (body if body is not None else b"") if method == "POST" else None
+    r = None
+    for attempt in range(_RATE_TRIES):
+        r = _get(url, merged, timeout, data=data)
+        if r.status_code != 429 or attempt == _RATE_TRIES - 1:
+            break
+        try:
+            wait = float(r.headers.get("Retry-After") or 0)
+        except ValueError:
+            wait = 0
+        time.sleep(min(max(wait, 3.0 * (attempt + 1)), 15.0))
+    drop = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+    out_headers = {k.lower(): v for k, v in r.headers.items() if k.lower() not in drop}
+    return r.status_code, out_headers, r.content, str(getattr(r, "url", url) or url)
 
 
 # ── TTL cache (shared across all providers) ────────────────────────────────

@@ -4,16 +4,20 @@ import qs.modules.common
 import qs.modules.common.widgets
 
 // The Water Tank at 1 x 1 (a quarter of the 2 x 2: 120 x 94 of content, 154 x 132 with the
-// housing): ONE rounded glass key that fills with water as you drink. A droplet chip sits upper
-// left, a small chip upper right says "OF 8" (the goal; point at it for the amount in litres, and
-// it says "GOAL!" once the day's goal is reached), and the glasses you have had are a sticker
-// numeral lower right, over the water. The water rises with an overshoot, like it sloshed.
+// housing): ONE rounded glass key that fills with water as you drink. It reads like a measuring
+// glass: a tick for every glass of the goal runs down the right edge (so the glass is a glass
+// even when it is empty), and the water rises behind them with an overshoot, like it sloshed.
+//
+// A slanted title tab (a droplet and WATER, the same tab the 2 x 2 has) sits upper left and a
+// round + key upper right says what a press does. The glasses you have had are the big sticker
+// numeral lower left, with "/ 8" (the goal) after it. At the goal the tab turns mint and says
+// GOAL!, and the + becomes a check.
 //
 // A click (or the wheel up) adds a glass: the key squashes and springs back and a small puff of
-// diamonds flies out. The wheel down takes one back. Reaching the goal turns the droplet chip into
-// a check and throws a bigger burst. It sinks into its hard shadow while pressed, and tips a little
-// when pointed at (until it is pressed; it straightens and stays straight until the pointer has
-// left for a moment, the same rule as CalendarTile.qml).
+// diamonds flies out. The wheel down takes one back. Reaching the goal throws a bigger burst. It
+// sinks into its hard shadow while pressed, and tips a little when pointed at (until it is
+// pressed; it straightens and stays straight until the pointer has left for a moment, the same
+// rule as CalendarTile.qml).
 //
 //   WaterTile {
 //       width: card.contentW; height: card.contentH
@@ -93,15 +97,13 @@ Item {
         cheerBurst.fire()
     }
 
-    // Two characters are the big size; "10" and up step down so they never run into the chip.
+    // Two characters are the big size; "10" and up step down so they never run into the goal.
     readonly property string countText: String(root.glasses)
-    readonly property int numSize: root.countText.length <= 1 ? 60 : 46
+    readonly property int numSize: root.countText.length <= 1 ? 58 : 46
 
     // The sticker numerals' ink: a dark fill inside a white ring (as on the popups' plates).
     readonly property color numberFill: Qt.darker(mt.colBorder, 1.8)
     readonly property color numberRing: "#ffffff"
-
-    readonly property string labelText: root.done ? "GOAL!" : (root.hover && root.amountText !== "" ? root.amountText.toUpperCase() : "OF " + root.goal)
 
     TinyFoot {
         id: foot
@@ -117,6 +119,10 @@ Item {
 
             // The glass: paper at the top, a little colour toward the bottom.
             fillColor: mt.pSurface
+            fillGradient: Gradient {
+                GradientStop { position: 0.0; color: mt.pSurface }
+                GradientStop { position: 1.0; color: Qt.tint(mt.pSurface, Qt.rgba(mt.accentCyan.r, mt.accentCyan.g, mt.accentCyan.b, 0.18)) }
+            }
 
             property real sx: 1
             property real sy: 1
@@ -135,30 +141,42 @@ Item {
                 yScale: key.sy
             }
 
-            // The water, clipped to the glass's rounded inside.
+            // The water, clipped to the glass's rounded inside, with a tick per glass of the goal.
             WaterFill {
                 anchors.fill: parent
                 radius: key.cornerRadius - key.ringWidth
                 level: root.shownLevel
+                marks: root.goal
             }
 
-            // The droplet chip, upper left (a check once the goal is reached).
-            Pill {
-                id: dropChip
-                x: 9
-                y: 8
-                width: 34
-                height: 37
-                shadowDy: 3
-                cornerRadius: 17
-                ringWidth: mt.borderWidth + mt.whiteLine
-                fillColor: root.done ? mt.accentMint : mt.chipFill
+            // The title tab, upper left: a droplet and WATER (a check and GOAL! at the goal).
+            Slant {
+                id: tab
+                x: 8
+                y: 9
+                width: 90
+                height: 26
+                skew: 0.2
+                radius: 9
+                color: root.done ? mt.accentMint : mt.chipFill
+                borderColor: mt.pLine
+                borderWidth: 3
+            }
+
+            // Text goes NEXT to the Slant (a child would lean with it).
+            Row {
+                x: tab.x + tab.lean / 2 + 9
+                y: tab.y
+                height: tab.height
+                spacing: 4
 
                 MaterialIcon {
-                    anchors.centerIn: parent
+                    anchors.verticalCenter: parent.verticalCenter
                     name: root.done ? "check_circle" : "water_drop"
-                    size: 22
-                    color: root.done ? mt.colBorder : mt.chipInk
+                    fill: 0
+                    size: 15
+                    weight: 700
+                    color: root.done ? mt.colBorder : (mt.dark ? mt.accentMint : mt.colBorder)
                     transformOrigin: Item.Center
                     rotation: root.tipped ? -14 : 0
 
@@ -166,45 +184,69 @@ Item {
                         NumberAnimation { duration: 420; easing.type: Easing.OutBack; easing.overshoot: 2.4 }
                     }
                 }
-            }
-
-            // The goal (or the amount, or "GOAL!"), upper right.
-            Pill {
-                id: labelChip
-                width: label.implicitWidth + 24
-                height: 27
-                x: parent.width - width - 9
-                y: 10
-                shadowDy: 3
-                cornerRadius: 12
-                ringWidth: mt.borderWidth + mt.whiteLine
-                fillColor: root.done ? mt.accentMint : mt.chipFill
 
                 Text {
-                    id: label
-                    anchors.centerIn: parent
-                    text: root.labelText
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.done ? "GOAL!" : "WATER"
                     color: root.done ? mt.colBorder : mt.chipInk
                     font.family: mt.fontFamily
                     font.pixelSize: 11
                     font.weight: Font.ExtraBold
                     font.styleName: mt.fontStyleBold
-                    font.letterSpacing: 1.2
+                    font.letterSpacing: 1.4
                 }
             }
 
-            // The glasses you have had, lower right, over the water.
+            // The + key, upper right: what a press does (the whole key is the button).
+            Pill {
+                id: addChip
+                width: 34
+                height: 34 + 3
+                x: parent.width - width - 10
+                y: 8
+                shadowDy: 3
+                cornerRadius: 17
+                ringWidth: mt.borderWidth + mt.whiteLine
+                fillColor: mt.accentMint
+                pressed: root.pressed
+
+                MaterialIcon {
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -1
+                    name: root.done ? "check" : "add"
+                    size: 24
+                    color: mt.colBorder
+                    transformOrigin: Item.Center
+                    rotation: root.tipped ? 90 : 0
+
+                    Behavior on rotation {
+                        NumberAnimation { duration: 420; easing.type: Easing.OutBack; easing.overshoot: 2.4 }
+                    }
+                }
+            }
+
+            // The glasses you have had, lower left, over the water, with the goal after it.
             Item {
                 id: group
-                width: countNum.width
+                width: countNum.width + goalNum.width - 6
                 height: countNum.height
-                x: parent.width - group.width - 8
+                x: 6
                 y: parent.height - group.height + 2
 
                 StickerText {
                     id: countNum
                     text: root.countText
                     pixelSize: root.numSize
+                    fillColor: root.numberFill
+                    ringColor: root.numberRing
+                }
+
+                StickerText {
+                    id: goalNum
+                    x: countNum.width - 6
+                    y: group.height - goalNum.height - 6
+                    text: "/" + root.goal
+                    pixelSize: 22
                     fillColor: root.numberFill
                     ringColor: root.numberRing
                 }

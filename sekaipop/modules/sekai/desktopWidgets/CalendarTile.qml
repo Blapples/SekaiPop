@@ -4,9 +4,10 @@ import qs.modules.common
 import qs.modules.common.widgets
 
 // The calendar card at 1 x 1 (a quarter of the 2 x 2: 120 x 94 of content, 154 x 132 with the
-// housing): today's date as ONE object, a page torn off a desk calendar. A navy header with
-// two punched holes carries the weekday and the month; the date is a big sticker numeral on
-// the paper under it. Nothing else: no backdrop, no ribbon, no dots.
+// housing): today's date as ONE object, a page torn off a desk calendar. A mint header with
+// two punched holes carries the weekday and the month, so the page reads as a page on any
+// palette; the date is a big sticker numeral on the paper under it, and a row of seven small
+// dots along the foot is the week, with today lit. Nothing else.
 //
 // It is a button like the rest of the shell's: it sinks into its hard shadow while pressed,
 // and tips a little when pointed at (until it is pressed; it straightens and stays straight until the pointer has left for a moment). It turns the page by itself at midnight (`today`
@@ -62,6 +63,7 @@ Item {
     }
 
     readonly property string dayText: String(root.today.getDate())
+    readonly property int weekday: root.today.getDay()
     readonly property string weekdayText: Qt.locale().dayName(root.today.getDay(), Locale.ShortFormat).toUpperCase()
     readonly property string monthText: Qt.locale().monthName(root.today.getMonth(), Locale.ShortFormat).toUpperCase()
 
@@ -94,9 +96,9 @@ Item {
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: 38
+                height: 36
                 radius: parent.radius
-                color: mt.chipFill
+                color: mt.accentMint
                 antialiasing: true
             }
 
@@ -105,7 +107,16 @@ Item {
                 anchors.right: parent.right
                 y: band.radius
                 height: band.height - band.radius
-                color: mt.chipFill
+                color: mt.accentMint
+            }
+
+            // A thin edge under the header, so the paper and the header are two things.
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                y: band.height - 2
+                height: 2
+                color: Qt.rgba(mt.colBorder.r, mt.colBorder.g, mt.colBorder.b, 0.35)
             }
 
             // The two holes the page hangs on.
@@ -134,7 +145,7 @@ Item {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.weekdayText
-                    color: mt.chipInk
+                    color: mt.colBorder
                     font.family: mt.fontFamily
                     font.pixelSize: 13
                     font.weight: Font.ExtraBold
@@ -148,14 +159,14 @@ Item {
                     height: 6
                     radius: 1.5
                     rotation: 45
-                    color: mt.accentMint
+                    color: mt.colBorder
                     antialiasing: true
                 }
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.monthText
-                    color: mt.chipInk
+                    color: mt.colBorder
                     font.family: mt.fontFamily
                     font.pixelSize: 13
                     font.weight: Font.ExtraBold
@@ -164,15 +175,48 @@ Item {
                 }
             }
 
-            // The date, on the paper.
+            // The date, on the paper, between the header and the week.
             StickerText {
                 id: dateNum
                 text: root.dayText
-                pixelSize: root.dayText.length === 1 ? 70 : 64
+                pixelSize: root.dayText.length === 1 ? 56 : 50
                 fillColor: root.numberFill
                 ringColor: root.numberRing
                 x: (parent.width - dateNum.width) / 2
-                y: band.height + (parent.height - band.height - dateNum.height) / 2 + 2
+                y: band.height + (weekDots.y - band.height - dateNum.height) / 2 + 2
+            }
+
+            // The week, along the foot: seven dots, today's is bigger and lit.
+            Row {
+                id: weekDots
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: parent.height - 12 - 9
+                height: 12
+                spacing: 8
+
+                Repeater {
+                    model: 7
+
+                    Item {
+                        id: dot
+                        required property int index
+                        readonly property bool isToday: dot.index === root.weekday
+
+                        width: 10
+                        height: 12
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: dot.isToday ? 10 : 6
+                            height: width
+                            radius: width / 2
+                            color: dot.isToday ? mt.accentMint : Qt.rgba(mt.pInk.r, mt.pInk.g, mt.pInk.b, 0.3)
+                            border.width: dot.isToday ? 2 : 0
+                            border.color: mt.pInk
+                            antialiasing: true
+                        }
+                    }
+                }
             }
         }
     }

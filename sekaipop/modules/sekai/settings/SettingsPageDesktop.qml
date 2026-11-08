@@ -576,6 +576,66 @@ SettingsPage {
         }
 
         SettingToggle {
+            icon: "fullscreen"
+            label: "Whole screen"
+            detail: "Kinetic typography over the entire desktop, in one of three styles (below). Every word lights up as it is sung. Click-through, under your windows"
+            checked: LyricsService.kinetic
+            onToggled: LyricsService.setKinetic(!LyricsService.kinetic)
+        }
+
+        SettingChoice {
+            visible: LyricsService.kinetic
+            label: "Whole screen style"
+            sublabel: "Poster gives every line a composition of its own and slams the words in. Wall puts the whole song on one tilted wall and flies the camera from word to word. Marquee has one big row that follows the voice, between rows of faint type sliding past"
+            current: LyricsService.kineticStyle
+            options: [
+                { id: "poster", label: "Poster", icon: "auto_awesome_mosaic" },
+                { id: "wall", label: "Wall", icon: "center_focus_strong" },
+                { id: "marquee", label: "Marquee", icon: "swap_horiz" }
+            ]
+            onPicked: id => LyricsService.setKineticStyle(id)
+        }
+
+        SettingChoice {
+            visible: LyricsService.kinetic
+            label: "Whole screen camera"
+            sublabel: "Drift moves the picture very slowly over each line. Still keeps the screen fixed, only the words move (the Wall still flies from word to word, only its slow zoom and swing stop). Nothing pulses with the beat"
+            current: LyricsService.kineticCamera
+            options: [
+                { id: "drift", label: "Drift", icon: "open_in_full" },
+                { id: "still", label: "Still", icon: "lock" }
+            ]
+            onPicked: id => LyricsService.setKineticCamera(id)
+        }
+
+        SettingChoice {
+            visible: LyricsService.kinetic
+            label: "Whole screen colors"
+            sublabel: "Theme follows your theme and wallpaper colors (matugen too). Sekai is the five pastels of the game. Accent uses only the two accents"
+            current: LyricsService.kineticColors
+            options: [
+                { id: "theme", label: "Theme", icon: "palette" },
+                { id: "sekai", label: "Sekai", icon: "star" },
+                { id: "accent", label: "Accent", icon: "contrast" }
+            ]
+            onPicked: id => LyricsService.setKineticColors(id)
+        }
+
+        SettingChoice {
+            visible: LyricsService.kinetic
+            label: "Dim the desktop"
+            sublabel: "A dark vignette behind the whole-screen lyrics, so the words read on a bright wallpaper"
+            current: LyricsService.kineticDim <= 0.01 ? "0" : (LyricsService.kineticDim < 0.38 ? "0.3" : (LyricsService.kineticDim < 0.58 ? "0.45" : "0.7"))
+            options: [
+                { id: "0", label: "Off", icon: "light_mode" },
+                { id: "0.3", label: "Soft", icon: "brightness_medium" },
+                { id: "0.45", label: "Normal", icon: "contrast" },
+                { id: "0.7", label: "Strong", icon: "dark_mode" }
+            ]
+            onPicked: id => LyricsService.setKineticDim(Number(id))
+        }
+
+        SettingToggle {
             icon: "text_fields"
             label: "Word by word"
             detail: "Light each word when it is sung, where a source has the timing. Off lights the whole line at once"

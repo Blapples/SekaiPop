@@ -808,6 +808,8 @@ Singleton {
     function open(screen, tab) {
         if (LockState.locked || GameModeService.enabled)
             return
+        // The lockscreen editor also takes the whole screen: one at a time.
+        LockEditService.close()
         const name = (typeof screen === "string" && screen !== "") ? screen : root.focusedScreenName()
         if (name === "")
             return

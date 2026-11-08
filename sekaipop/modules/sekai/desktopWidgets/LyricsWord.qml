@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.modules.common
+import "../../common/functions/LyricsFont.js" as LF
 
 // One word of a lyric, drawn as a sticker with no card behind it, so it sits straight
 // on the wallpaper: a navy outline all round (the string drawn eight times on a small
@@ -45,10 +46,10 @@ Item {
         // This monitor's theme: Theme.of() gives the shell's own unless the monitor has one.
         readonly property var mt: Theme.of(QsWindow.window)
         text: root.text
-        font.family: mt.fontFamily
+        font.family: LF.family(root.text, mt.fontFamily)
         font.pixelSize: root.pixelSize
-        font.weight: Font.ExtraBold
-        font.styleName: mt.fontStyleBold
+        font.weight: LF.weight(root.text, Font.ExtraBold)
+        font.styleName: LF.style(root.text, mt.fontStyleBold)
     }
 
     Item {
@@ -88,14 +89,25 @@ Item {
             color: root.fillColor
         }
 
-        // the sung colour, swept in from the left
+        // the sung colour, swept in from the left. The clip is wider than the string on every
+        // side (`pad`): a letter's ink can reach past its advance width (the tail of an s or
+        // a y, an f, a swash), and a clip cut at the advance left a white sliver of the word
+        // uncoloured, even at 100 %. The sweep's moving edge is still exactly at
+        // sung x the string's width; once the word is sung nothing is cut at all.
         Item {
+            id: fillClip
+            readonly property real pad: Math.ceil(root.pixelSize * 0.3)
+            readonly property real k: Math.max(0, Math.min(1, root.sung))
             visible: root.withFill && root.sung > 0.001
-            width: Math.round(box.width * Math.max(0, Math.min(1, root.sung)))
-            height: box.height
+            x: -fillClip.pad
+            y: -fillClip.pad
+            width: fillClip.k >= 0.999 ? box.width + 2 * fillClip.pad : Math.round(box.width * fillClip.k) + fillClip.pad
+            height: box.height + 2 * fillClip.pad
             clip: true
 
             Glyphs {
+                x: fillClip.pad
+                y: fillClip.pad
                 color: root.litColor
             }
         }

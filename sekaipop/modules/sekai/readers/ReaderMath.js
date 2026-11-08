@@ -185,6 +185,23 @@ function trackProgress(chapters, isRead) {
     return { progress: ch, volumes: vol }
 }
 
+// The ids of the chapters AniList already counts as read: the chapters up to `progress` and the
+// volumes up to `volumes` (the same whole-number reading as trackProgress: 12.5 is 12). Extras
+// and chapters with no number are left out. The reader marks these read when a title opens.
+function chaptersUpTo(chapters, progress, volumes) {
+    var ids = []
+    for (var i = 0; i < (chapters || []).length; i++) {
+        var c = chapters[i]
+        if (!c || !c.id || c.kind === "extra") continue
+        var m = /\d+(\.\d+)?/.exec(String(c.chapter === undefined ? "" : c.chapter))
+        if (!m) continue
+        var n = Math.floor(parseFloat(m[0]))
+        if (c.kind === "volume") { if (volumes > 0 && n <= volumes) ids.push(c.id) }
+        else if (progress > 0 && n <= progress) ids.push(c.id)
+    }
+    return ids
+}
+
 // ── The user's AniList lists (the Library tabs) ───────────────────────────────
 
 // The tabs of the Library, in the order they are shown. There is no "All": a title is always in

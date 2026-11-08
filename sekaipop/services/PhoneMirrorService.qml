@@ -536,9 +536,15 @@ Singleton {
         root._stuckTicks = 0
         root._healRestarts = 0
         if (root.shown) {
+            captureHoldTimer.stop()
+            root.captureHold = false
             stopGrace.stop()
             root._start()
         } else {
+            // Before _park: it is what takes the picture's conditions away.
+            root.captureHold = root.attached && root.captureReady
+            if (root.captureHold)
+                captureHoldTimer.restart()
             launchDebounce.stop()
             root._park()
             if (root.embedRunning || root.embedLaunching)
@@ -922,6 +928,22 @@ Singleton {
     // capture was tied to it too, so every re-check tore the picture down and the screen went
     // back to "Waiting for the picture..." (a workspace change, the Quick Panel opening).
     property bool captureReady: false
+    // The panel is sliding away and the picture on it must not go blank while it does. Parking
+    // the window (which has to happen at once: it is a real window, and the slide would leave
+    // it standing in the open) drops `attached` and `captureReady`, and the capture used to go
+    // with them, so the screen turned empty the instant Close was pressed and an empty phone
+    // slid off. While this is up the capture is kept on the window as it is, parked or not, and
+    // the last frame stays on the glass. Set only if there was a picture to keep, cleared when
+    // the slide is over (or the panel comes back).
+    property bool captureHold: false
+
+    // Longer than the panel's slide out (PhoneMirror.qml, hideAnim: 220 ms).
+    Timer {
+        id: captureHoldTimer
+        interval: 320
+        repeat: false
+        onTriggered: root.captureHold = false
+    }
     // What is wrong, for the screen to say; "" when nothing is.
     property string placementError: ""
     property int _verifyTries: 0

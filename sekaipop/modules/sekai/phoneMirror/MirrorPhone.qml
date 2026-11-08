@@ -250,11 +250,17 @@ Item {
             // again (what closing and opening the panel used to fix by starting a new one).
             // `captureReady` stays up while the window is checked again later (a workspace
             // change, a layer opening), so the picture is not torn down by those.
-            captureSource: (PhoneMirrorService.attached && PhoneMirrorService.captureReady && frame.captureArmed)
+            // `captureHold`: the panel is sliding out, the window is already parked, and the
+            // picture stays as it was until the slide is over.
+            captureSource: ((PhoneMirrorService.attached && PhoneMirrorService.captureReady && frame.captureArmed)
+                            || PhoneMirrorService.captureHold)
                 ? PhoneMirrorService.toplevel : null
             live: true
             paintCursor: false
             onStopped: {
+                // A parked window may end its capture; keep the last frame until the slide is over.
+                if (PhoneMirrorService.captureHold)
+                    return
                 frame.captureArmed = false
                 captureRetry.restart()
             }

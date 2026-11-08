@@ -723,6 +723,14 @@ ColumnLayout {
                 onClicked: Manga.setTrackAuto(!Manga.trackAuto)
             }
 
+            // A title already begun on AniList opens with those chapters marked read
+            ReaderChip {
+                icon: Manga.trackAdopt ? "check_read" : "eye_closed"
+                text: "Mark read from AniList: " + (Manga.trackAdopt ? "On" : "Off")
+                lit: Manga.trackAdopt
+                onClicked: Manga.setTrackAdopt(!Manga.trackAdopt)
+            }
+
             ReaderChip {
                 icon: "link"
                 text: "Open profile"
