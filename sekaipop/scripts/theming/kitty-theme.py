@@ -8,6 +8,7 @@ import stat
 import sys
 import tempfile
 from fnmatch import fnmatchcase
+from hashlib import sha256
 from pathlib import Path
 
 
@@ -20,6 +21,7 @@ PALETTE = {
     'tab_bar_background': 'bg', **{f'color{i}': f'c{i}' for i in range(16)},
 }
 MARK = '# sekaipop: kitty colours'
+NEWLINE_PREFIX = MARK + ' (added newline sha256='
 OLD_NAME = 'pjsekai'
 LEGACY_MARK = '# {}: managed block, removed by Settings -> Desktop -> App colours (revert)'
 HEADER = '# Written by {} (app-theme.sh). Do not edit: it is rewritten with the theme.'
@@ -29,6 +31,10 @@ SYSTEM_CONF = Path('/etc/xdg/kitty/kitty.conf')
 
 class Conflict(Exception):
     pass
+
+
+def digest(text):
+    return sha256(text.encode('utf-8', errors='surrogateescape')).hexdigest()
 
 
 def config_directory(env):
@@ -176,16 +182,20 @@ def find_hook(config, root):
     markers = {
         MARK: (PALETTE_NAME, ''),
         MARK + ' (created config)': (PALETTE_NAME, 'created'),
-        MARK + ' (added newline)': (PALETTE_NAME, 'newline'),
+        MARK + ' (added newline)': (PALETTE_NAME, ''),  # The old marker cannot prove which newline is ours.
         **{LEGACY_MARK.format(name): (f'{name}-colors.conf', '') for name in ('sekaipop', OLD_NAME)},
     }
     hits = []
     marker_line = rf'(?:^|(?<=[\r\n]))([ \t]*# (?:sekaipop|{OLD_NAME}): (?:kitty colours|managed block)[^\r\n]*)'
     for match in re.finditer(marker_line + r'(?:\r\n|[\r\n])?', config):
         marker = match[1]
-        if marker not in markers:
+        separator = re.fullmatch(re.escape(NEWLINE_PREFIX) + r'([0-9a-f]{64})\)', marker)
+        if separator:
+            name, kind = PALETTE_NAME, ''
+        elif marker in markers:
+            name, kind = markers[marker]
+        else:
             raise Conflict(f'{root}: unfamiliar Kitty integration marker {marker!r}; review it manually')
-        name, kind = markers[marker]
         include = re.match(r'include ' + re.escape(name) + r'(?:\r\n|[\r\n]|\Z)', config[match.end():])
         if not include:
             raise Conflict(f'{root}: managed marker is missing its original include; review it manually')
@@ -193,19 +203,36 @@ def find_hook(config, root):
         if re.match(r'[ \t]*\\', config[end:]):
             raise Conflict(f'{root}: managed include has a continuation; review it manually')
         start = match.start()
-        if kind == 'newline' and start and end == len(config):
-            start -= 2 if config[:start].endswith('\r\n') else 1
+        if separator and start and end == len(config):
+            before_separator = start - (2 if config[:start].endswith('\r\n') else 1)
+            if digest(config[:before_separator]) == separator[1]:
+                start = before_separator
         hits.append((start, end, root.parent / name, kind == 'created'))
     if len(hits) > 1:
         raise Conflict(f'{root}: multiple managed Kitty includes; review them manually')
     return hits[0] if hits else None
 
 
+def palette_header(path):
+    return HEADER.format(path.name.removesuffix('-colors.conf')) + '\n'
+
+
+def managed_palette(path, body):
+    return f'{palette_header(path)}# sekaipop: palette sha256={digest(body)}\n{body}'
+
+
 def owned_palette(path, contents):
-    lines = (contents or '').splitlines()
-    name = path.name.removesuffix('-colors.conf')
-    return bool(lines and lines[0] == HEADER.format(name) and all(
-        not line.strip() or line.split(maxsplit=1)[0] in PALETTE for line in lines[1:]
+    parts = (contents or '').split('\n', 2)
+    return len(parts) == 3 and contents == managed_palette(path, parts[2])
+
+
+def legacy_palette(path, contents):
+    header = palette_header(path)
+    if not contents.startswith(header):
+        return False
+    lines = contents[len(header):].splitlines(keepends=True)
+    return not lines or (len(lines) == len(PALETTE) and all(
+        re.fullmatch(rf'{key} #[0-9a-fA-F]{{6}}\n', line) for key, line in zip(PALETTE, lines)
     ))
 
 
@@ -221,10 +248,14 @@ def writable(path):
 
 def write(path, before, after):
     mode = writable(path)
-    if read(path) != before:
-        raise Conflict(f'{path} changed during the operation; retry after reviewing it')
+
+    def verify():
+        if writable(path) != mode or read(path) != before:
+            raise Conflict(f'{path} changed during the operation; retry after reviewing it')
+
     if after is None:
         if before is not None:
+            verify()
             path.unlink()
         return
     fd, tmp = tempfile.mkstemp(prefix='.sekaipop-', dir=path.parent)
@@ -232,6 +263,7 @@ def write(path, before, after):
         with os.fdopen(fd, 'wb') as f:
             os.fchmod(f.fileno(), mode)
             f.write(after.encode('utf-8', errors='surrogateescape'))
+        verify()
         os.replace(tmp, path)
     finally:
         Path(tmp).unlink(missing_ok=True)
@@ -341,13 +373,15 @@ def change(action, root, args, dry):
         try:
             before = read(palette)
             if owned_palette(palette, before):
-                if audit.opaque or palette.resolve() in audit.references:
+                if audit.opaque or palette.resolve() in audit.references or (not dry and read(root) != restored):
                     print(f'Kitty: kept {palette} because another config may reference it.')
                 elif dry:
                     writable(palette)
                     print(f'Would remove the generated palette {palette}.')
                 else:
                     write(palette, before, None)
+            elif before is not None:
+                print(f'Kitty: kept {palette} because its original generated content cannot be verified.')
         except (OSError, Conflict) as exc:
             print(f'Kitty: kept {palette}: {exc}', file=sys.stderr)
         if hook and not dry:
@@ -355,14 +389,18 @@ def change(action, root, args, dry):
         return
 
     before = read(palette)
-    if before is not None and not owned_palette(palette, before):
-        raise Conflict(f'{palette}: existing file has no SekaiPop ownership marker; review it manually')
-    after = before if before is not None else HEADER.format(palette.name.removesuffix('-colors.conf')) + '\n'
+    legacy = before is not None and not owned_palette(palette, before)
+    if legacy and not legacy_palette(palette, before):
+        raise Conflict(f'{palette}: existing palette is edited or unrecognised; review it manually')
+    after = before if before is not None else managed_palette(palette, '')
     if action in ('apply', 'sync'):
         values = dict(arg.split('=', 1) for arg in args if '=' in arg)
         if any(not re.fullmatch(r'#[0-9a-fA-F]{6}', values.get(key, '')) for key in PALETTE.values()):
             raise Conflict('Kitty palette is incomplete or contains invalid colours')
-        after = after.splitlines()[0] + '\n' + ''.join(f'{key} {values[name]}\n' for key, name in PALETTE.items())
+        body = ''.join(f'{key} {values[name]}\n' for key, name in PALETTE.items())
+        if legacy and action == 'sync' and before not in (palette_header(palette), palette_header(palette) + body):
+            raise Conflict(f'{palette}: older palette differs from current colours; review it before applying Kitty colours explicitly')
+        after = managed_palette(palette, body)
 
     proposed = config
     if not hook:
@@ -371,7 +409,7 @@ def change(action, root, args, dry):
         if original is None:
             marker += ' (created config)'
         elif config and not config.endswith(('\n', '\r')):
-            marker += ' (added newline)'
+            marker = f'{NEWLINE_PREFIX}{digest(config)})'
             proposed += newline
         proposed += f'{marker}{newline}include {palette.name}{newline}'
     audit = inspect(root, palette, {root: proposed, palette: after})
@@ -387,6 +425,8 @@ def change(action, root, args, dry):
     if proposed != config:
         backup(root, original)
     if after != before:
+        if legacy:
+            backup(palette, before)
         write(palette, before, after)
     try:
         if proposed != config:
@@ -413,8 +453,10 @@ def main():
     root = directory / 'kitty.conf'
     if action not in ('check', 'status') and directory.exists() and directory.stat().st_uid != os.getuid():
         raise Conflict(f'{directory}: Kitty config directory is not owned by this user')
-    if dry or action in ('check', 'status') or (not directory.exists() and action in ('sync', 'revert')):
+    if dry or action in ('check', 'status'):
         change(action, root, args, dry)
+        return
+    if action in ('sync', 'revert') and not directory.exists():
         return
     directory.mkdir(parents=True, exist_ok=True)
     fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)

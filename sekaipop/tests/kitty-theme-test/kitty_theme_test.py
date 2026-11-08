@@ -1,11 +1,14 @@
 """Run with python3 sekaipop/tests/kitty-theme-test/kitty_theme_test.py (requires Kitty)."""
 
 import os
+import runpy
 import shutil
 import subprocess
 import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
+from unittest import mock
 
 
 REPO = Path(__file__).resolve().parents[3]
@@ -15,6 +18,9 @@ COLOUR_ARGS = ('bg', 'fg', 'selfg', 'selbg', 'cursor', 'accent', 'border', 'surf
                *(f'c{i}' for i in range(16)))
 LEGACY_MARK = '# {}: managed block, removed by Settings -> Desktop -> App colours (revert)'
 HEADER = '# Written by {} (app-theme.sh). Do not edit: it is rewritten with the theme.'
+PALETTE_KEYS = ('foreground background selection_foreground selection_background cursor cursor_text_color '
+                'url_color active_border_color inactive_border_color active_tab_foreground active_tab_background '
+                'inactive_tab_foreground inactive_tab_background tab_bar_background').split() + [f'color{i}' for i in range(16)]
 
 
 @unittest.skipUnless(shutil.which('kitty'), 'requires the Kitty executable')
@@ -167,19 +173,54 @@ class KittyThemeTest(unittest.TestCase):
         self.assertEqual(self.palette.read_text(), '# user-owned file\nbackground #222222\n')
         self.theme('enable', success=False)
 
+    def test_restore_keeps_new_lines_before_the_hook(self):
+        self.put(self.config, 'font_size 12')
+        self.apply()
+        config = self.config.read_text()
+        edited = 'font_size 12\nmap ctrl+shift+c copy_to_clipboard\n\n'
+        self.put(self.config, config.replace('font_size 12\n', edited, 1))
+        self.theme('revert')
+        self.assertEqual(self.config.read_text(), edited)
+
+    def test_restore_preserves_a_manually_edited_palette(self):
+        for transform in (lambda text: text + 'color1 #445566\n',
+                          lambda text: text.replace('background #abc123', 'background #445566', 1)):
+            with self.subTest(transform=transform):
+                self.apply()
+                edited = transform(self.palette.read_text())
+                self.put(self.palette, edited)
+                self.apply(action='sync', success=False)
+                self.theme('revert')
+                self.assertFalse(self.config.exists())
+                self.assertEqual(self.palette.read_text(), edited)
+                self.palette.unlink()
+
     def test_existing_managed_blocks_are_respected(self):
         for name in ('pjsekai', 'sekaipop'):
             with self.subTest(name=name):
-                palette = self.put(self.directory / f'{name}-colors.conf',
-                                   f'{HEADER.format(name)}\nbackground #112233\n')
+                previous = f'{HEADER.format(name)}\n' + ''.join(f'{key} #abc123\n' for key in PALETTE_KEYS)
+                palette = self.put(self.directory / f'{name}-colors.conf', previous)
                 original = 'font_size 12\n'
                 self.put(self.config, f'{original}{LEGACY_MARK.format(name)}\ninclude {palette.name}\n')
                 self.assertEqual(self.theme('status').strip(), 'on')
+                self.apply('#112233', action='sync', success=False)
+                self.assertEqual(palette.read_text(), previous)
                 self.apply(action='sync')
-                self.assertEqual(self.effective(), '#abc123 12.0')
+                self.assertIn(previous, [p.read_text() for p in self.backups.iterdir()])
+                self.apply('#112233', action='sync')
+                self.assertEqual(self.effective(), '#112233 12.0')
                 self.theme('revert')
                 self.assertEqual(self.config.read_text(), original)
                 self.assertFalse(palette.exists())
+
+    def test_restore_keeps_an_unsigned_legacy_palette(self):
+        previous = f'{HEADER.format("sekaipop")}\nbackground #112233\n'
+        self.put(self.palette, previous)
+        original = 'font_size 12\n'
+        self.put(self.config, original + LEGACY_MARK.format('sekaipop') + '\ninclude sekaipop-colors.conf\n')
+        self.theme('revert')
+        self.assertEqual(self.config.read_text(), original)
+        self.assertEqual(self.palette.read_text(), previous)
 
     def test_ambiguous_ownership_is_not_rewritten(self):
         edited = f'{LEGACY_MARK.format("sekaipop")}\nfont_size 11\n'
@@ -204,11 +245,51 @@ class KittyThemeTest(unittest.TestCase):
         self.assertTrue(self.palette.is_file())
 
     def test_restore_cleans_up_an_owned_orphan(self):
-        self.put(self.palette, f'{HEADER.format("sekaipop")}\nbackground #112233\n')
+        self.apply()
+        self.config.unlink()
         self.theme('revert', '--dry-run')
         self.assertTrue(self.palette.is_file())
         self.theme('revert')
         self.assertFalse(self.palette.exists())
+
+    def test_concurrent_enable_sync_and_restore(self):
+        original = 'font_size 13\n'
+        self.put(self.config, original)
+        colours = [f'{key}=#abc123' for key in COLOUR_ARGS]
+
+        def parallel(*commands):
+            with ExitStack() as stack:
+                jobs = [stack.enter_context(subprocess.Popen(
+                    ['sh', SCRIPT, action, 'kitty', *args], env=self.env,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+                )) for action, args in commands]
+                for job in jobs:
+                    output, _ = job.communicate(timeout=10)
+                    self.assertEqual(job.returncode, 0, output)
+
+        parallel(('enable', []), ('apply', colours), ('sync', colours))
+        self.assertEqual(self.config.read_text().count('include sekaipop-colors.conf\n'), 1)
+        parallel(('sync', colours), ('revert', []), ('sync', colours))
+        self.assertEqual(self.config.read_text(), original)
+        self.assertFalse(self.palette.exists())
+
+    def test_write_detects_an_edit_during_staging(self):
+        helper = runpy.run_path(str(THEMING / 'kitty-theme.py'))
+        original = 'font_size 13\n'
+        self.put(self.config, original)
+        edited = original + 'window_margin_width 8\n'
+        mkstemp = tempfile.mkstemp
+
+        def stage_then_save(*args, **kwargs):
+            result = mkstemp(*args, **kwargs)
+            self.put(self.config, edited)
+            return result
+
+        with mock.patch.object(tempfile, 'mkstemp', stage_then_save):
+            with self.assertRaisesRegex(helper['Conflict'], 'changed during the operation'):
+                helper['write'](self.config, original, original + 'include sekaipop-colors.conf\n')
+        self.assertEqual(self.config.read_text(), edited)
+        self.assertEqual(list(self.directory.iterdir()), [self.config])
 
     def test_config_directory_override(self):
         directory = self.home / 'custom kitty'
