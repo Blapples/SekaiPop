@@ -35,7 +35,9 @@ class InstallerRestartTest(unittest.TestCase):
         self.hypr = self.write(self.home / 'config/hypr/hyprland.conf', '# user config\n')
         binaries = self.home / 'bin'
         self.write(binaries / 'qs', '#!/bin/sh\nprintf "%s\\n" "$*" >> "$HOME/qs-calls"\n'
-                   'case "$*" in *"ipc call apptheme syncKitty") exit "${TEST_IPC_RESULT:-1}" ;; esac\n')
+                   'case "$*" in *"ipc call apptheme syncKitty") '
+                   '[ -z "${TEST_IPC_OUTPUT:-}" ] || printf "%s\\n" "$TEST_IPC_OUTPUT"; '
+                   'exit "${TEST_IPC_RESULT:-1}" ;; esac\n')
         self.write(binaries / 'setsid', '#!/bin/sh\necho restart >> "$HOME/restarts"\n')
         self.write(binaries / 'Hyprland', '#!/bin/sh\necho "Hyprland 0.57.1"\n')
         self.write(binaries / 'pacman', '#!/bin/sh\necho "qt6-base 6.12.0"\n')
@@ -48,12 +50,12 @@ class InstallerRestartTest(unittest.TestCase):
         path.write_text(text)
         return path
 
-    def install(self, *options):
+    def install(self, *options, success=True):
         result = subprocess.run(['bash', str(self.installer), '--yes', '--hypr', 'skip', '--no-deps',
                                  '--rice', str(self.rice), *options],
                                 env=self.env, capture_output=True, text=True, timeout=15)
         output = result.stdout + result.stderr
-        self.assertEqual(result.returncode, 0, output)
+        self.assertEqual(result.returncode == 0, success, output)
         self.assertEqual(self.hypr.read_text(), '# user config\n')
         self.assertFalse((self.home / 'restarts').exists())
         return output
@@ -77,6 +79,50 @@ class InstallerRestartTest(unittest.TestCase):
         self.env['TEST_IPC_RESULT'] = '0'
         output = self.install('--kitty', 'enable')
         self.assertNotIn('Start or restart SekaiPop to apply the current Kitty palette', output)
+
+    def test_missing_handler_with_zero_exit_still_requests_restart(self):
+        # Real Quickshell 0.3.2 writes this diagnostic to stdout and exits zero.
+        self.installed.parent.mkdir(parents=True)
+        shutil.copytree(self.rice, self.installed)
+        self.env['TEST_IPC_RESULT'] = '0'
+        self.env['TEST_IPC_OUTPUT'] = 'Function not found.'
+        output = self.install('--kitty', 'enable')
+        self.assertIn('Start or restart SekaiPop to apply the current Kitty palette', output)
+        self.assertNotIn('Restart SekaiPop to load the installed shell', output)
+
+    @unittest.skipUnless(shutil.which('kitty'), 'requires the Kitty executable')
+    def test_repeated_enable_ignores_unrelated_errors_like_the_helper(self):
+        scripts = self.rice / 'scripts/theming'
+        for name in ('app-theme.sh', 'kitty-theme.py'):
+            shutil.copy(REPO / 'sekaipop/scripts/theming' / name, scripts / name)
+        self.installed.parent.mkdir(parents=True)
+        shutil.copytree(self.rice, self.installed)
+        helper = scripts / 'app-theme.sh'
+        enabled = subprocess.run(['sh', str(helper), 'enable', 'kitty'],
+                                 env=self.env, capture_output=True, text=True, timeout=10)
+        self.assertEqual(enabled.returncode, 0, enabled.stdout + enabled.stderr)
+        config = self.home / 'config/kitty/kitty.conf'
+        with config.open('a') as output:
+            output.write('some_future_option 1\n')
+        snapshot = {p: (p.read_bytes(), p.stat().st_mtime_ns)
+                    for p in config.parent.rglob('*') if p.is_file()}
+        repeated = subprocess.run(['sh', str(helper), 'enable', 'kitty', '--dry-run'],
+                                  env=self.env, capture_output=True, text=True, timeout=10)
+        self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+        self.install('--kitty', 'enable', '--dry-run')
+        self.assertEqual({p: (p.read_bytes(), p.stat().st_mtime_ns)
+                          for p in config.parent.rglob('*') if p.is_file()}, snapshot)
+
+    @unittest.skipUnless(shutil.which('kitty'), 'requires the Kitty executable')
+    def test_first_enable_still_requires_the_helper_audit(self):
+        for name in ('app-theme.sh', 'kitty-theme.py'):
+            shutil.copy(REPO / 'sekaipop/scripts/theming' / name,
+                        self.rice / 'scripts/theming' / name)
+        config = self.write(self.home / 'config/kitty/kitty.conf', 'background $term0\n')
+        output = self.install('--kitty', 'enable', '--dry-run', success=False)
+        self.assertIn('Kitty colour sync could not be enabled', output)
+        self.assertEqual(config.read_text(), 'background $term0\n')
+        self.assertFalse((config.parent / 'sekaipop-colors.conf').exists())
 
 
 if __name__ == '__main__':

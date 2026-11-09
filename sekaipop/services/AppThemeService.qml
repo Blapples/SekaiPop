@@ -46,6 +46,7 @@ Singleton {
     readonly property var targets: [
         { id: "kitty", label: "kitty", icon: "terminal", scripts: ["kitty"],
           statusDriven: true, syncAction: "sync", enableAction: "enable",
+          installedStates: ["on", "blocked", "uncertain", "pending"],
           note: "Open windows recolour at once" },
         { id: "foot", label: "foot", icon: "terminal", scripts: ["foot"],
           note: "New windows (foot never re-reads its config)" },
@@ -70,7 +71,7 @@ Singleton {
         if (!t)
             return false
         if (t.statusDriven)
-            return t.scripts.some(s => root.status[s] === "on" || root.status[s] === "conflict")
+            return t.scripts.some(s => (t.installedStates || ["on"]).includes(root.status[s]))
         return SettingsService.flag("appTheme." + id)
     }
 
@@ -194,8 +195,8 @@ Singleton {
         runner.exec(["sh", root.script].concat(next))
     }
 
-    // A no-op background sync must not dismiss a failed explicit enable. Remember
-    // which action failed, independently for each status-driven script target.
+    // Background sync must not replace or dismiss a failed explicit operation.
+    // Installation and sync health come from status, not these operation records.
     property var failures: ({})
 
     function jobFinished(args, exitCode) {
@@ -203,10 +204,13 @@ Singleton {
         const t = root.targets.find(t => t.statusDriven && t.scripts.includes(script))
         if (!t)
             return
+        const previous = root.failures[script]
+        if (action === t.syncAction && previous && previous.action !== t.syncAction)
+            return
         const next = Object.assign({}, root.failures)
         if (exitCode !== 0)
-            next[script] = { action: action, conflict: root.status[script] === "conflict" }
-        else if (action !== t.syncAction || (next[script] && next[script].action === t.syncAction))
+            next[script] = { action: action, conflict: ["blocked", "uncertain", "conflict"].includes(root.status[script]) }
+        else
             delete next[script]
         root.failures = next
     }
@@ -322,7 +326,7 @@ Singleton {
                 if (failure && failure === failuresAtStart[s] && failure.action === t.syncAction) {
                     if (st[s] === "off" || (st[s] === "on" && failure.conflict))
                         delete next[s]
-                    else if (st[s] === "conflict" && !failure.conflict)
+                    else if (["blocked", "uncertain", "conflict"].includes(st[s]) && !failure.conflict)
                         next[s] = { action: failure.action, conflict: true }
                 }
             }
@@ -331,19 +335,27 @@ Singleton {
     }
 
     // The state of one switch's apps, for the Settings detail line:
-    // "applied", "not installed", "conflict" or "off".
+    // "applied", "not installed", "conflict", "uncertain", "pending" or "off".
     function stateOf(id) {
         const t = root.target(id)
         if (!t)
             return ""
-        let on = 0, missing = 0
+        let on = 0, missing = 0, uncertain = 0, pending = 0
         for (const s of t.scripts) {
             const v = root.status[s]
-            if (root.failures[s] || v === "conflict")
+            const failure = root.failures[s]
+            if (v === "uncertain" && (!failure || failure.action === t.syncAction))
+                uncertain++
+            else if (failure || v === "conflict" || v === "blocked")
                 return "conflict"
             if (v === "on") on++
+            else if (v === "pending") pending++
             else if (v === "missing") missing++
         }
+        if (uncertain > 0)
+            return "uncertain"
+        if (pending > 0)
+            return "pending"
         if (on > 0)
             return "applied"
         if (missing === t.scripts.length)

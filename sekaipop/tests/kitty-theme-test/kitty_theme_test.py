@@ -74,7 +74,7 @@ class KittyThemeTest(unittest.TestCase):
         self.apply(action='sync')
         self.assertEqual(list(self.home.iterdir()), [])
         self.theme('enable')
-        self.assertEqual(self.theme('status').strip(), 'on')
+        self.assertEqual(self.theme('status').strip(), 'pending')
         self.apply(action='sync')
         self.assertEqual(self.effective().split()[0], '#abc123')
         self.theme('revert')
@@ -227,6 +227,7 @@ class KittyThemeTest(unittest.TestCase):
     def test_ambiguous_ownership_is_not_rewritten(self):
         edited = f'{LEGACY_MARK.format("sekaipop")}\nfont_size 11\n'
         self.put(self.config, edited)
+        self.assertEqual(self.theme('status').strip(), 'conflict')
         self.theme('revert', success=False)
         self.assertEqual(self.config.read_text(), edited)
 
@@ -280,12 +281,12 @@ class KittyThemeTest(unittest.TestCase):
         original = self.config.read_text()
         for addition in ('background #112233\n', 'include sekaipop-colors.conf\n'):
             self.put(self.config, original + addition)
-            self.assertEqual(self.theme('status').strip(), 'conflict')
+            self.assertEqual(self.theme('status').strip(), 'blocked')
             self.put(self.config, original)
             self.assertEqual(self.theme('status').strip(), 'on')
         palette = self.palette.read_text()
         self.put(self.palette, palette + 'color1 #123456\n')
-        self.assertEqual(self.theme('status').strip(), 'conflict')
+        self.assertEqual(self.theme('status').strip(), 'blocked')
         self.put(self.palette, palette)
         self.assertEqual(self.theme('status').strip(), 'on')
 
@@ -325,6 +326,144 @@ class KittyThemeTest(unittest.TestCase):
         self.theme('revert')
         self.assertTrue(self.config.is_symlink())
         self.assertEqual(target.read_text(), '')
+
+    def test_revert_preserves_a_user_palette_symlink(self):
+        self.apply()
+        target = self.home / 'dotfiles/colours.conf'
+        target.parent.mkdir()
+        self.palette.rename(target)
+        self.palette.symlink_to(target)
+        original = target.read_bytes()
+        self.theme('revert', '--dry-run')
+        self.assertTrue(self.palette.is_symlink())
+        self.theme('revert')
+        self.assertTrue(self.palette.is_symlink())
+        self.assertEqual(target.read_bytes(), original)
+        self.assertFalse(self.config.exists())
+
+    def test_dangling_config_link_is_restored_after_enable(self):
+        target = self.home / 'dotfiles/kitty.conf'
+        target.parent.mkdir()
+        self.directory.mkdir(parents=True)
+        self.config.symlink_to(target)
+        self.theme('enable', '--dry-run')
+        self.assertFalse(target.exists())
+        self.theme('enable')
+        self.assertTrue(target.exists())
+        self.theme('revert', '--dry-run')
+        self.assertTrue(target.exists())
+        self.theme('revert')
+        self.assertTrue(self.config.is_symlink())
+        self.assertEqual(self.config.readlink(), target)
+        self.assertFalse(target.exists())
+
+    def test_created_link_target_keeps_later_user_edits_or_relocation(self):
+        target = self.home / 'dotfiles/kitty.conf'
+        target.parent.mkdir()
+        self.directory.mkdir(parents=True)
+        self.config.symlink_to(target)
+        self.apply()
+        with target.open('a') as f:
+            f.write('font_size 13\n')
+        self.theme('revert')
+        self.assertEqual(target.read_text(), 'font_size 13\n')
+        target.unlink()
+        self.apply()
+        relocated = target.with_name('relocated.conf')
+        target.rename(relocated)
+        self.config.unlink()
+        self.config.symlink_to(relocated)
+        self.theme('revert')
+        self.assertEqual(self.config.resolve(), relocated)
+        self.assertEqual(relocated.read_text(), '')
+
+    def test_failed_apply_rolls_back_dangling_palette_target_without_unlinking(self):
+        target = self.home / 'dotfiles/palette.conf'
+        target.parent.mkdir()
+        original = 'font_size 13\n'
+        self.put(self.config, original)
+        self.palette.symlink_to(target)
+        args = [f'{key}=#abc123' for key in COLOUR_ARGS]
+        code = f'''
+import runpy
+from pathlib import Path
+h = runpy.run_path({str(THEMING / 'kitty-theme.py')!r})
+root = Path({str(self.config)!r})
+write = h['write']
+def refuse_root(path, before, after, **kwargs):
+    if path == root:
+        raise h['Conflict']('injected config write failure')
+    write(path, before, after, **kwargs)
+h['change'].__globals__['write'] = refuse_root
+try:
+    h['change']('apply', root, {args!r}, False)
+except h['Conflict'] as error:
+    print(error)
+else:
+    raise RuntimeError('write failure was not exercised')
+'''
+        self.assertIn('injected config write failure', self.run_command(['kitty', '+runpy', f'exec({code!r}, {{}})']))
+        self.assertEqual(self.config.read_text(), original)
+        self.assertTrue(self.palette.is_symlink())
+        self.assertEqual(self.palette.readlink(), target)
+        self.assertFalse(target.exists())
+
+    def test_dynamic_include_does_not_claim_successful_sync(self):
+        self.apply('#445566')
+        ran = self.home / 'generator-ran'
+        generator = self.put(self.directory / 'dynamic.py',
+                             f'#!/usr/bin/env python3\nfrom pathlib import Path\n'
+                             f'Path({str(ran)!r}).touch()\nprint("background #998877")\n')
+        generator.chmod(0o755)
+        with self.config.open('a') as f:
+            f.write('geninclude dynamic.py\n')
+        # Run Kitty's real parser to establish the effective precedence.
+        self.assertEqual(self.effective().split()[0], '#998877')
+        self.assertTrue(ran.exists())
+        ran.unlink()
+        before = self.palette.read_bytes()
+        self.assertEqual(self.theme('status').strip(), 'uncertain')
+        output = self.apply('#112233', action='sync', success=False)
+        self.assertIn('generator was not run', output)
+        self.assertEqual(self.palette.read_bytes(), before)
+        self.assertFalse(ran.exists())
+
+    def test_invalid_later_colour_is_ignored_like_kitty(self):
+        self.apply()
+        with self.config.open('a') as f:
+            f.write('background $term0\n')
+        self.assertEqual(self.effective().split()[0], '#abc123')
+        self.apply('#445566', action='sync')
+        self.assertEqual(self.effective().split()[0], '#445566')
+        self.assertEqual(self.theme('status').strip(), 'on')
+        self.theme('check', success=False)
+
+    def test_missing_palette_is_pending_until_sync_repairs_it(self):
+        self.apply()
+        self.palette.unlink()
+        self.assertEqual(self.theme('status').strip(), 'pending')
+        self.apply('#445566', action='sync')
+        self.assertEqual(self.theme('status').strip(), 'on')
+        self.assertEqual(self.effective().split()[0], '#445566')
+
+    def test_preview_newline_marker_remains_recoverable(self):
+        original = 'font_size 12\n'
+        self.put(self.config, original + '# sekaipop: kitty colours (added newline)\n'
+                 'include sekaipop-colors.conf\n')
+        self.put(self.palette, HEADER.format('sekaipop') + '\n')
+        self.apply(action='sync')
+        self.assertEqual(self.effective(), '#abc123 12.0')
+        self.theme('revert')
+        # The old marker cannot prove which newline is ours; keep it conservatively.
+        self.assertEqual(self.config.read_text(), original)
+
+    def test_unsigned_legacy_format_is_not_proof_of_unmodified_colours(self):
+        previous = HEADER.format('sekaipop') + '\n' + ''.join(f'{key} #654321\n' for key in PALETTE_KEYS)
+        self.put(self.palette, previous)
+        self.put(self.config, LEGACY_MARK.format('sekaipop') + '\ninclude sekaipop-colors.conf\n')
+        output = self.apply(action='sync')
+        self.assertIn('cannot distinguish manual edits', output)
+        self.assertIn(previous, [p.read_text() for p in self.backups.iterdir()])
 
     def test_revert_without_kitty(self):
         original = 'font_size 13\n'

@@ -1043,6 +1043,8 @@ SettingsPage {
                     label: appRow.modelData.label
                     detail: appRow.themeState === "not installed" ? "Not installed"
                             : appRow.themeState === "conflict" ? "Config needs review · see the shell log"
+                            : appRow.themeState === "uncertain" ? "Dynamic config needs review · colours may be overridden"
+                            : appRow.themeState === "pending" ? "Waiting for the current palette"
                             : appRow.modelData.id === "hyprland" && HyprlandSettings.isLua && !HyprlandSettings.linked
                               ? "Live now; see the Hyprland page's one-time setup to keep it"
                               : appRow.modelData.note

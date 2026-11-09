@@ -60,6 +60,37 @@ test("failed explicit enable survives an off/no-op sync and other targets' succe
     assert.equal(s.root.enabled("kitty"), false)
 })
 
+test("failed background sync cannot replace an explicit operation failure", () => {
+    for (const action of ["apply", "enable", "revert"]) {
+        const s = service()
+        s.complete(action, "kitty", 1)
+        s.status({ kitty: "conflict" })
+        const explicitFailure = s.root.failures.kitty
+        s.complete("sync", "kitty", 1)
+        assert.equal(s.root.failures.kitty, explicitFailure)
+        assert.equal(s.root.failures.kitty.action, action)
+        s.status({ kitty: "off" })
+        assert.equal(s.root.stateOf("kitty"), "conflict")
+        assert.equal(s.root.enabled("kitty"), false)
+        s.complete("sync", "kitty", 0)
+        s.status({ kitty: "off" })
+        assert.equal(s.root.failures.kitty, explicitFailure)
+    }
+})
+
+test("an ambiguous marker or failed enable does not imply an installed hook", () => {
+    const s = service()
+    s.status({ kitty: "conflict" })
+    assert.equal(s.root.stateOf("kitty"), "conflict")
+    assert.equal(s.root.enabled("kitty"), false)
+    s.complete("apply", "kitty", 1)
+    s.status({ kitty: "conflict" })
+    s.complete("sync", "kitty", 1)
+    s.status({ kitty: "conflict" })
+    assert.equal(s.root.enabled("kitty"), false)
+    assert.equal(s.root.failures.kitty.action, "apply")
+})
+
 test("successful explicit retry or revert clears its failure", () => {
     for (const action of ["apply", "enable", "revert"]) {
         const s = service()
@@ -75,7 +106,7 @@ test("manual repair or disable clears a failed sync on a fresh status response",
     for (const repaired of ["on", "off"]) {
         const s = service()
         s.complete("sync", "kitty", 1)
-        s.status({ kitty: "conflict" })
+        s.status({ kitty: "blocked" })
         assert.equal(s.root.stateOf("kitty"), "conflict")
         s.status({ kitty: repaired })
         assert.equal(s.root.stateOf("kitty"), repaired === "on" ? "applied" : "off")
@@ -116,14 +147,47 @@ test("status started before a new failure cannot clear that failure", () => {
     assert.equal(s.root.stateOf("kitty"), "applied")
 })
 
-test("managed conflict keeps the switch enabled so it can be turned off", () => {
+test("a verified but blocked hook keeps the switch enabled so it can be turned off", () => {
     const s = service()
-    s.status({ kitty: "conflict" })
+    s.status({ kitty: "blocked" })
     assert.equal(s.root.enabled("kitty"), true)
     assert.equal(s.root.stateOf("kitty"), "conflict")
     s.root.setEnabled("kitty", false)
     assert.deepEqual(Array.from(s.commands[0]), ["sh", "app-theme.sh", "revert", "kitty"])
     assert.deepEqual(s.writes, [])
+})
+
+test("dynamic uncertainty is separate from installation and explicit failures", () => {
+    const s = service()
+    s.status({ kitty: "uncertain" })
+    assert.equal(s.root.enabled("kitty"), true)
+    assert.equal(s.root.stateOf("kitty"), "uncertain")
+    s.complete("sync", "kitty", 1)
+    s.status({ kitty: "uncertain" })
+    assert.equal(s.root.stateOf("kitty"), "uncertain")
+    s.status({ kitty: "on" })
+    assert.equal(s.root.stateOf("kitty"), "applied")
+    s.complete("apply", "kitty", 1)
+    s.status({ kitty: "uncertain" })
+    assert.equal(s.root.stateOf("kitty"), "conflict")
+    assert.equal(s.root.enabled("kitty"), true)
+})
+
+test("an installed hook awaiting colours is pending rather than applied", () => {
+    const s = service()
+    s.status({ kitty: "pending" })
+    assert.equal(s.root.enabled("kitty"), true)
+    assert.equal(s.root.stateOf("kitty"), "pending")
+    s.complete("sync", "kitty", 1)
+    s.status({ kitty: "pending" })
+    assert.equal(s.root.stateOf("kitty"), "conflict")
+    s.complete("sync", "kitty", 0)
+    s.status({ kitty: "on" })
+    assert.equal(s.root.stateOf("kitty"), "applied")
+    s.complete("apply", "kitty", 1)
+    s.status({ kitty: "pending" })
+    assert.equal(s.root.stateOf("kitty"), "conflict")
+    assert.equal(s.root.enabled("kitty"), true)
 })
 
 test("target descriptors drive enable, deferred enable, sync and revert", () => {

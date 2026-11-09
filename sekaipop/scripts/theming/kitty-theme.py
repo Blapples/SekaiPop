@@ -22,6 +22,7 @@ PALETTE = {
 }
 MARK = '# sekaipop: kitty colours'
 NEWLINE_PREFIX = MARK + ' (added newline sha256='
+CREATED_TARGET_PREFIX = MARK + ' (created symlink target sha256='
 OLD_NAME = 'pjsekai'
 LEGACY_MARK = '# {}: managed block, removed by Settings -> Desktop -> App colours (revert)'
 HEADER = '# Written by {} (app-theme.sh). Do not edit: it is rewritten with the theme.'
@@ -73,23 +74,13 @@ def logical_lines(text):
 
 
 class Audit:
-    def __init__(self, root, changes=None, strict=True):
+    def __init__(self, root, changes=None, strict=True, colours=False):
         self.strict = strict
         self.key_pat = re.compile(r'([a-zA-Z][a-zA-Z0-9_-]*)\s+(.+)$')
         self.colour_keys = PALETTE.keys()
-        if strict:
-            from kitty.colors import ThemeColors
-            from kitty.conf.utils import currently_parsing, key_pat
-            from kitty.options.parse import create_result_dict, parse_conf_item
-            from kitty.utils import log_error
-
-            self.parse = parse_conf_item
-            self.options = create_result_dict()
-            self.parsing = currently_parsing
-            self.key_pat = key_pat
-            self.colour_keys = ThemeColors().get_default_colors().keys() | PALETTE.keys()
-            log_error.redirect = lambda message: self.errors.append(f'{self.location}: {message}')
+        self.parse = None
         self.errors = []
+        self.uncertain = []
         self.warnings = []
         self.references = {}
         self.colour_sources = {}
@@ -99,12 +90,28 @@ class Audit:
         self.changes = changes or {}
         self.seen = set()
         self.env_stack = set()
+        if strict or colours:
+            try:
+                from kitty.colors import ThemeColors
+                from kitty.conf.utils import currently_parsing, key_pat
+                from kitty.options.parse import create_result_dict, parse_conf_item
+                from kitty.utils import log_error
+            except ImportError:
+                if strict:
+                    raise
+            else:
+                self.parse = parse_conf_item
+                self.options = create_result_dict()
+                self.parsing = currently_parsing
+                self.key_pat = key_pat
+                self.colour_keys = ThemeColors().get_default_colors().keys() | PALETTE.keys()
+                log_error.redirect = lambda message: self.errors.append(f'{self.location}: {message}')
         try:
             for path in (SYSTEM_CONF, root):
                 self.seen.clear()  # Kitty starts a separate include graph for each config.
                 self.scan(path, optional=True)
         finally:
-            if strict:
+            if self.parse:
                 del log_error.redirect
 
     def scan(self, path, source=None, optional=False):
@@ -143,11 +150,14 @@ class Audit:
                 if key in ('include', 'globinclude', 'envinclude', 'geninclude'):
                     self.include(key, value, base, where)
                     continue
-                if self.strict:
+                if self.parse and (self.strict or key in self.colour_keys):
                     self.location = where
+                    previous_errors = len(self.errors)
                     with self.parsing.set_file(name), self.parsing.set_line(line, number):
                         if not self.parse(key, value, self.options):
                             self.errors.append(f'{where}: unknown config key {key}')
+                    if len(self.errors) != previous_errors:
+                        continue  # Kitty ignores rejected values; they cannot override colours.
                 if key in self.colour_keys or re.fullmatch(r'color[0-9]+', key):
                     self.colour_sources.setdefault(name, set()).add(key)
                     self.last_colour[key] = (self.position, name, where)
@@ -162,7 +172,9 @@ class Audit:
                        os.path.expanduser(value).replace('$$', '\0')).replace('\0', '$')
         if key == 'geninclude':
             self.opaque = True
-            self.errors.append(f'{where}: geninclude {value} requires manual review (generator was not run)')
+            message = f'{where}: geninclude {value} requires manual review (generator was not run)'
+            self.errors.append(message)
+            self.uncertain.append(message)
         elif key == 'envinclude':
             for name in os.environ:
                 if fnmatchcase(name, value):
@@ -194,6 +206,8 @@ def find_hook(config, root):
     markers = {
         MARK: (PALETTE_NAME, ''),
         MARK + ' (created config)': (PALETTE_NAME, 'created'),
+        # eaf8c25 preview installs used this marker, without proof of newline ownership.
+        MARK + ' (added newline)': (PALETTE_NAME, ''),
         **{LEGACY_MARK.format(name): (f'{name}-colors.conf', '') for name in ('sekaipop', OLD_NAME)},
     }
     hits = []
@@ -201,7 +215,10 @@ def find_hook(config, root):
     for match in re.finditer(marker_line + r'(?:\r\n|[\r\n])?', config):
         marker = match[1]
         separator = re.fullmatch(re.escape(NEWLINE_PREFIX) + r'([0-9a-f]{64})\)', marker)
-        if separator:
+        created_target = re.fullmatch(re.escape(CREATED_TARGET_PREFIX) + r'([0-9a-f]{64})\)', marker)
+        if created_target:
+            name, kind = PALETTE_NAME, 'target:' + created_target[1]
+        elif separator:
             name, kind = PALETTE_NAME, ''
         elif marker in markers:
             name, kind = markers[marker]
@@ -218,7 +235,7 @@ def find_hook(config, root):
             before_separator = start - (2 if config[:start].endswith('\r\n') else 1)
             if digest(config[:before_separator]) == separator[1]:
                 start = before_separator
-        hits.append((start, end, root.parent / name, kind == 'created'))
+        hits.append((start, end, root.parent / name, kind))
     if len(hits) > 1:
         raise Conflict(f'{root}: multiple managed Kitty includes; review them manually')
     return hits[0] if hits else None
@@ -238,6 +255,7 @@ def owned_palette(path, contents):
 
 
 def legacy_palette(path, contents):
+    """Recognise the old format, not authorship or absence of manual colour edits."""
     header = palette_header(path)
     if not contents.startswith(header):
         return False
@@ -257,7 +275,7 @@ def writable(path):
     return stat.S_IMODE(info.st_mode)
 
 
-def write(path, before, after):
+def write(path, before, after, remove_target=False):
     # Replace the target atomically, preserving a dotfiles/stow symlink and its mode.
     target = path.resolve()
     mode = writable(path)
@@ -269,7 +287,9 @@ def write(path, before, after):
     if after is None:
         if before is not None:
             verify()
-            path.unlink()
+            if path.is_symlink() and not remove_target:
+                raise Conflict(f'{path}: keeping a user-created symlink')
+            (target if remove_target else path).unlink()
         return
     fd, tmp = tempfile.mkstemp(prefix='.sekaipop-', dir=target.parent)
     try:
@@ -305,10 +325,12 @@ def show(audit, root, palette):
         print(f'Kitty warning: {warning}', file=sys.stderr)
     for error in audit.errors:
         print(f'Kitty conflict: {error}', file=sys.stderr)
+    for message in audit.uncertain:
+        print(f'Kitty uncertain: {message}', file=sys.stderr)
 
 
 def inspect(root, palette, changes=None, strict=True):
-    audit = Audit(root, changes, strict=strict)
+    audit = Audit(root, changes, strict=strict, colours=True)
     if not strict:
         # Updating our own palette does not require repairing the user's other settings.
         audit.errors.clear()
@@ -321,7 +343,10 @@ def inspect(root, palette, changes=None, strict=True):
     if references:
         for key, (position, name, where) in audit.last_colour.items():
             if key in PALETTE and name != str(palette) and position > references[0]:
-                audit.errors.append(f'{where}: {key} overrides the SekaiPop include')
+                if audit.parse:
+                    audit.errors.append(f'{where}: {key} overrides the SekaiPop include')
+                else:
+                    audit.uncertain.append(f'{where}: Kitty parser unavailable; cannot validate {key}')
     return audit
 
 
@@ -356,19 +381,35 @@ def reload_windows(directory):
 def change(action, root, args, dry):
     original = read(root)
     config = original or ''
-    hook = find_hook(config, root)
+    try:
+        hook = find_hook(config, root)
+    except Conflict:
+        if action == 'status':
+            print('conflict')  # No verified hook: this is not an installed integration.
+            return
+        raise
     palette = hook[2] if hook else root.parent / PALETTE_NAME
     if action == 'status':
         if hook:
-            before = read(palette)
-            audit = inspect(root, palette, strict=False)
-            writable(palette)
-            if not os.access(palette.resolve().parent, os.W_OK):
-                raise Conflict(f'{palette}: palette directory is not writable')
+            try:
+                before = read(palette)
+                audit = inspect(root, palette, strict=False)
+                writable(palette)
+                if not os.access(palette.resolve().parent, os.W_OK):
+                    raise Conflict(f'{palette}: palette directory is not writable')
+            except (OSError, Conflict):
+                print('blocked')  # Verified hook, but its palette cannot be updated.
+                return
             if (audit.errors or len(audit.references.get(palette.resolve(), [])) != 1
                     or (before is not None and not owned_palette(palette, before)
                         and not legacy_palette(palette, before))):
-                print('conflict')
+                print('blocked')
+                return
+            if audit.uncertain:
+                print('uncertain')
+                return
+            if before is None or before in (palette_header(palette), managed_palette(palette, '')):
+                print('pending')  # The hook exists, but the shell has not supplied colours yet.
                 return
         print('on' if hook else 'off')
         return
@@ -386,10 +427,15 @@ def change(action, root, args, dry):
         if not hook and not os.path.lexists(palette):
             return
         restored = original
+        remove_target = False
         if hook:
-            start, end, _, created = hook
+            start, end, _, kind = hook
             restored = config[:start] + config[end:]
-            if created and not restored and not root.is_symlink():
+            # Only a target we created at this exact location may be removed. A
+            # config moved behind a symlink later belongs to the user's dotfiles.
+            remove_target = (root.is_symlink() and kind == 'target:' + digest(str(root.resolve()))
+                             and not restored)
+            if not restored and (remove_target or (kind == 'created' and not root.is_symlink())):
                 restored = None
         audit = Audit(root, {root: restored}, strict=False)
         if hook:
@@ -398,11 +444,13 @@ def change(action, root, args, dry):
                 print(f'Would remove the SekaiPop include from {root}.')
             else:
                 backup(root, original)
-                write(root, original, restored)
+                write(root, original, restored, remove_target=remove_target)
         try:
             before = read(palette)
             if owned_palette(palette, before):
-                if audit.opaque or palette.resolve() in audit.references or (not dry and read(root) != restored):
+                if palette.is_symlink():
+                    print(f'Kitty: kept {palette} and its target because the symlink belongs to the user.')
+                elif audit.opaque or palette.resolve() in audit.references or (not dry and read(root) != restored):
                     print(f'Kitty: kept {palette} because another config may reference it.')
                 elif dry:
                     writable(palette)
@@ -418,6 +466,7 @@ def change(action, root, args, dry):
         return
 
     before = read(palette)
+    palette_link = palette.is_symlink()
     legacy = before is not None and not owned_palette(palette, before)
     if legacy and not legacy_palette(palette, before):
         raise Conflict(f'{palette}: existing palette is edited or unrecognised; review it manually')
@@ -434,13 +483,14 @@ def change(action, root, args, dry):
         marker = MARK
         newline = '\r\n' if '\r\n' in config else '\n'
         if original is None:
-            marker += ' (created config)'
+            marker = (f'{CREATED_TARGET_PREFIX}{digest(str(root.resolve()))})'
+                      if root.is_symlink() else MARK + ' (created config)')
         elif config and not config.endswith(('\n', '\r')):
             marker = f'{NEWLINE_PREFIX}{digest(config)})'
             proposed += newline
         proposed += f'{marker}{newline}include {palette.name}{newline}'
     audit = inspect(root, palette, {root: proposed, palette: after}, strict=proposed != config)
-    if audit.errors or len(audit.references.get(palette.resolve(), [])) != 1:
+    if audit.errors or audit.uncertain or len(audit.references.get(palette.resolve(), [])) != 1:
         show(audit, root, palette)
         raise Conflict('Kitty colour sync needs an unambiguous, valid include. Review the reported config before retrying.')
     if proposed != config:
@@ -454,6 +504,7 @@ def change(action, root, args, dry):
         backup(root, original)
     if after != before:
         if legacy:
+            print('Kitty: legacy format matches, but cannot distinguish manual edits; backing up before replacement.')
             backup(palette, before)
         write(palette, before, after)
     try:
@@ -461,7 +512,7 @@ def change(action, root, args, dry):
             write(root, original, proposed)
     except (OSError, Conflict):
         if after != before:
-            write(palette, after, before)
+            write(palette, after, before, remove_target=before is None and palette_link)
         raise
     if proposed != config or after != before:
         reload_windows(root.parent)

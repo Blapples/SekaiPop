@@ -270,7 +270,9 @@ if [ ! -f "$RICE/scripts/theming/kitty-theme.py" ]; then
     else
         warn "This rice does not include the Kitty configuration checker."
     fi
-elif sh "$KITTY_THEME" check kitty; then
+elif [ "$KITTY" = enable ] || sh "$KITTY_THEME" check kitty; then
+    # The helper audits a first enable itself. Do not make repeat enables depend
+    # on a stricter check of unrelated user settings than the helper requires.
     kitty_status=$(sh "$KITTY_THEME" status kitty)
     if [ "$KITTY" = auto ] && [ "$FIRST_INSTALL" = 1 ] && [ "$kitty_status" = off ] &&
         [ "$YES" = 0 ] && [ "$DRY" = 0 ] && [ -t 0 ]; then
@@ -283,7 +285,10 @@ elif sh "$KITTY_THEME" check kitty; then
         if sh "$KITTY_THEME" enable kitty "${KITTY_FLAGS[@]}"; then
             if [ "$DRY" = 0 ]; then
                 ok "Kitty colour sync is enabled."
-                if ! have qs || ! qs -p "$QS_DEST" ipc call apptheme syncKitty >/dev/null 2>&1; then
+                # A successful void IPC call is silent. Quickshell 0.3.2 can print
+                # "Function not found." yet return zero when an old shell is running.
+                if ! have qs || ! kitty_ipc_output=$(qs -p "$QS_DEST" ipc call apptheme syncKitty 2>&1) ||
+                    [ -n "$kitty_ipc_output" ]; then
                     warn "Start or restart SekaiPop to apply the current Kitty palette."
                 fi
             fi
@@ -293,8 +298,6 @@ elif sh "$KITTY_THEME" check kitty; then
     else
         info "Keeping the current Kitty colour choice."
     fi
-elif [ "$KITTY" = enable ]; then
-    fail "Kitty colour sync could not be enabled (see above)"
 fi
 
 # monitors.lua is made for THIS machine, never shipped: a file written for someone else's screens

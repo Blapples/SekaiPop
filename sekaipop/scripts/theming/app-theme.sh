@@ -5,7 +5,9 @@
 #
 #   app-theme.sh apply <target> key=#rrggbb ...   write the colours (and hook them in)
 #   app-theme.sh revert <target>                  remove everything `apply` added
-#   app-theme.sh status                           kitty=on|off|missing ... one per target
+#   app-theme.sh status                           one target=state per line
+# Kitty: on/blocked/uncertain/pending have a verified hook; conflict does not.
+# Other states are off (no hook) and missing (Kitty absent and no hook).
 #   app-theme.sh check|enable|sync kitty           inspect, opt in, or refresh an existing Kitty hook
 #
 # Targets: kitty, foot, vscode, fuzzel, rofi, fish, prompt, hyprland.
