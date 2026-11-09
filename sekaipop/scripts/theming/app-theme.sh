@@ -59,7 +59,15 @@ MARK="# sekaipop: managed block, removed by Settings -> Desktop -> App colours (
 # keeps even a read-only check from creating the default Kitty config directory.
 kitty_theme() {
     if ! have kitty; then
-        if [ "$1" = status ]; then echo missing; return 0; fi
+        # Revert only needs to remove our exact hook and inspect references. It must
+        # remain available after Kitty is removed, without Kitty's option parser.
+        if [ "$1" = revert ]; then python3 -B "$here/kitty-theme.py" "$@"; return $?; fi
+        if [ "$1" = status ]; then
+            kitty_state=$(python3 -B "$here/kitty-theme.py" "$@") || return 1
+            [ "$kitty_state" != off ] || kitty_state=missing
+            printf '%s\n' "$kitty_state"
+            return 0
+        fi
         [ "$1" != sync ] || return 0
         echo "Kitty is not installed; configuration validation is unavailable." >&2
         return 3

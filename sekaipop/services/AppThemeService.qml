@@ -40,9 +40,12 @@ Singleton {
         && !(ThemeService.current === "matugen" && ThemeService.matugenPalette === null)
 
     // What the switches are called, what each one does, and which script targets
-    // it covers. (`id` is the end of the setting's name: "appTheme.<id>".)
+    // it covers. Most use the saved "appTheme.<id>" switch; statusDriven targets
+    // use their installed hook instead. Their syncAction never enables a missing hook,
+    // and enableAction can install it before the shell's palette has settled.
     readonly property var targets: [
         { id: "kitty", label: "kitty", icon: "terminal", scripts: ["kitty"],
+          statusDriven: true, syncAction: "sync", enableAction: "enable",
           note: "Open windows recolour at once" },
         { id: "foot", label: "foot", icon: "terminal", scripts: ["foot"],
           note: "New windows (foot never re-reads its config)" },
@@ -63,8 +66,11 @@ Singleton {
     }
 
     function enabled(id) {
-        if (id === "kitty")
-            return root.status.kitty === "on"
+        const t = root.target(id)
+        if (!t)
+            return false
+        if (t.statusDriven)
+            return t.scripts.some(s => root.status[s] === "on" || root.status[s] === "conflict")
         return SettingsService.flag("appTheme." + id)
     }
 
@@ -184,15 +190,30 @@ Singleton {
             return
         const next = root.queue[0]
         root.queue = root.queue.slice(1)
-        runner.kittyJob = next[1] === "kitty"
+        runner.job = next
         runner.exec(["sh", root.script].concat(next))
     }
 
-    property bool kittyFailed: false
+    // A no-op background sync must not dismiss a failed explicit enable. Remember
+    // which action failed, independently for each status-driven script target.
+    property var failures: ({})
+
+    function jobFinished(args, exitCode) {
+        const action = args[0], script = args[1]
+        const t = root.targets.find(t => t.statusDriven && t.scripts.includes(script))
+        if (!t)
+            return
+        const next = Object.assign({}, root.failures)
+        if (exitCode !== 0)
+            next[script] = { action: action, conflict: root.status[script] === "conflict" }
+        else if (action !== t.syncAction || (next[script] && next[script].action === t.syncAction))
+            delete next[script]
+        root.failures = next
+    }
 
     Process {
         id: runner
-        property bool kittyJob: false
+        property var job: []
         stderr: StdioCollector {
             onStreamFinished: {
                 if (text.trim().length > 0)
@@ -206,8 +227,7 @@ Singleton {
             }
         }
         onExited: exitCode => {
-            if (runner.kittyJob)
-                root.kittyFailed = exitCode !== 0 && exitCode !== 3
+            root.jobFinished(runner.job, exitCode)
             root.refreshStatus()
             root.pump()
         }
@@ -226,18 +246,15 @@ Singleton {
 
     // The switch: on applies now, off reverts now.
     function setEnabled(id, on) {
-        if (id === "kitty") {
-            if (on && root.settled)
-                root.applyScripts(["kitty"])
-            else
-                root.enqueue([on ? "enable" : "revert", "kitty"])
-            return
-        }
         const t = root.target(id)
         if (!t)
             return
-        SettingsService.set("appTheme." + id, on)
-        if (on)
+        if (!t.statusDriven)
+            SettingsService.set("appTheme." + id, on)
+        if (on && t.enableAction && !root.settled) {
+            for (const s of t.scripts)
+                root.enqueue([t.enableAction, s])
+        } else if (on)
             root.applyScripts(t.scripts)
         else
             root.revertScripts(t.scripts)
@@ -246,24 +263,15 @@ Singleton {
     // Revert: switch it off AND take its block out, even when the switch was
     // already off (a block left by an earlier run).
     function revert(id) {
-        if (id === "kitty") {
-            root.setEnabled(id, false)
-            return
-        }
-        const t = root.target(id)
-        if (!t)
-            return
-        SettingsService.set("appTheme." + id, false)
-        root.revertScripts(t.scripts)
+        root.setEnabled(id, false)
     }
 
     function applyEnabled() {
         if (!root.settled)
             return
-        root.applyScripts(["kitty"], "sync")
         for (const t of root.targets)
-            if (t.id !== "kitty" && root.enabled(t.id))
-                root.applyScripts(t.scripts)
+            if (t.statusDriven || root.enabled(t.id))
+                root.applyScripts(t.scripts, t.syncAction || "apply")
     }
 
     // ===== keeping up with the theme =====
@@ -294,21 +302,45 @@ Singleton {
     function refreshStatus() {
         if (statusProc.running)
             statusProc.pending = true
-        else
+        else {
+            statusProc.failuresAtStart = root.failures
             statusProc.exec(["sh", root.script, "status"])
+        }
+    }
+
+    function acceptStatus(st, failuresAtStart) {
+        root.status = st
+        const next = Object.assign({}, root.failures)
+        for (const t of root.targets) {
+            if (!t.statusDriven)
+                continue
+            for (const s of t.scripts) {
+                const failure = next[s]
+                // A diagnosed hook conflict can be cleared by manual repair/removal.
+                // An unchanged "on" cannot prove an IO error was repaired, nor does
+                // status validate a refused first enable. Ignore older responses.
+                if (failure && failure === failuresAtStart[s] && failure.action === t.syncAction) {
+                    if (st[s] === "off" || (st[s] === "on" && failure.conflict))
+                        delete next[s]
+                    else if (st[s] === "conflict" && !failure.conflict)
+                        next[s] = { action: failure.action, conflict: true }
+                }
+            }
+        }
+        root.failures = next
     }
 
     // The state of one switch's apps, for the Settings detail line:
-    // "applied", "not installed" or "off".
+    // "applied", "not installed", "conflict" or "off".
     function stateOf(id) {
-        if (id === "kitty" && (root.kittyFailed || root.status.kitty === "conflict"))
-            return "conflict"
         const t = root.target(id)
         if (!t)
             return ""
         let on = 0, missing = 0
         for (const s of t.scripts) {
             const v = root.status[s]
+            if (root.failures[s] || v === "conflict")
+                return "conflict"
             if (v === "on") on++
             else if (v === "missing") missing++
         }
@@ -322,6 +354,7 @@ Singleton {
     Process {
         id: statusProc
         property bool pending: false
+        property var failuresAtStart: ({})
         onExited: {
             if (pending) {
                 pending = false
@@ -336,7 +369,7 @@ Singleton {
                     if (i > 0)
                         st[line.slice(0, i)] = line.slice(i + 1).trim()
                 }
-                root.status = st
+                root.acceptStatus(st, statusProc.failuresAtStart)
             }
         }
     }
@@ -362,8 +395,9 @@ Singleton {
         }
 
         function syncKitty(): void {
+            const t = root.target("kitty")
             if (root.settled)
-                root.applyScripts(["kitty"], "sync")
+                root.applyScripts(t.scripts, t.syncAction)
             else
                 root.refreshStatus()
         }

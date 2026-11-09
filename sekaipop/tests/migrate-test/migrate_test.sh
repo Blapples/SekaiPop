@@ -91,7 +91,7 @@ ck "kept-aside folder is not touched again" 'ls -d "$C"/pjsekai.migrated-* >/dev
 # The old name survives only in compatibility code, fixtures and the dev log.
 repo="$here/../../.."
 left=$(grep -rIl -i pjsekai "$repo" --exclude-dir=.git --exclude=DEVLOG.md 2>/dev/null | sed "s#^$repo/##" |
-    grep -vxE 'hypr/pjsekai_overrides\.lua|install\.sh|sekaipop/scripts/system/migrate-from-pjsekai\.sh|sekaipop/scripts/theming/(kitty-theme\.py|prompt-pjsekai\.sh)|sekaipop/tests/(kitty-theme-test/kitty_theme_test\.py|migrate-test/migrate_test\.sh)')
+    grep -vxE 'install\.sh|sekaipop/scripts/system/migrate-from-pjsekai\.sh|sekaipop/scripts/theming/kitty-theme\.py|sekaipop/tests/(kitty-theme-test/kitty_theme_test\.py|migrate-test/migrate_test\.sh)')
 ck "the old name only survives where it must: [$left]" '[ -z "$left" ]'
 
 echo "$checks checks, $fails failed"

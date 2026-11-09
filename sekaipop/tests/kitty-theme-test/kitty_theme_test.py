@@ -61,7 +61,8 @@ class KittyThemeTest(unittest.TestCase):
                                  'from kitty.config import load_config; '
                                  'from kitty.constants import defconf; '
                                  'bad = []; o = load_config(defconf, accumulate_bad_lines=bad); '
-                                 'assert not bad, bad; print(f"#{int(o.background):06x}", o.font_size)']).strip()
+                                 'print(f"#{int(o.background):06x}", o.font_size); '
+                                 'print(bad) if bad else None']).strip()
 
     def install(self, *args, success=True):
         return self.run_command(['bash', REPO / 'install.sh', '--yes', '--hypr', 'skip',
@@ -203,9 +204,8 @@ class KittyThemeTest(unittest.TestCase):
                 original = 'font_size 12\n'
                 self.put(self.config, f'{original}{LEGACY_MARK.format(name)}\ninclude {palette.name}\n')
                 self.assertEqual(self.theme('status').strip(), 'on')
-                self.apply('#112233', action='sync', success=False)
-                self.assertEqual(palette.read_text(), previous)
-                self.apply(action='sync')
+                # The wallpaper can change while the old shell is not running.
+                self.apply('#112233', action='sync')
                 self.assertIn(previous, [p.read_text() for p in self.backups.iterdir()])
                 self.apply('#112233', action='sync')
                 self.assertEqual(self.effective(), '#112233 12.0')
@@ -218,6 +218,8 @@ class KittyThemeTest(unittest.TestCase):
         self.put(self.palette, previous)
         original = 'font_size 12\n'
         self.put(self.config, original + LEGACY_MARK.format('sekaipop') + '\ninclude sekaipop-colors.conf\n')
+        # A header alone proves no ownership of a partial or edited set of values.
+        self.apply(action='sync', success=False)
         self.theme('revert')
         self.assertEqual(self.config.read_text(), original)
         self.assertEqual(self.palette.read_text(), previous)
@@ -227,12 +229,159 @@ class KittyThemeTest(unittest.TestCase):
         self.put(self.config, edited)
         self.theme('revert', success=False)
         self.assertEqual(self.config.read_text(), edited)
-        self.config.unlink()
-        original = self.put(self.home / 'dotfiles/kitty.conf', 'font_size 13\n')
-        self.config.symlink_to(original)
-        self.theme('enable', success=False)
+
+    def test_symlinked_config_enable_sync_and_restore(self):
+        original = 'font_size 13\ninclude extras.conf\n'
+        target = self.put(self.home / 'dotfiles/kitty.conf', original)
+        self.put(self.directory / 'extras.conf', 'window_margin_width 7\n')
+        self.config.symlink_to(target)
+        self.apply()
+        installed = target.read_bytes()
+        self.apply('#112233', action='sync')
+        self.assertEqual(target.read_bytes(), installed)
+        self.assertEqual(self.effective(), '#112233 13.0')
+        self.theme('revert')
         self.assertTrue(self.config.is_symlink())
-        self.assertEqual(original.read_text(), 'font_size 13\n')
+        self.assertEqual(self.config.resolve(), target)
+        self.assertEqual(target.read_text(), original)
+        self.assertFalse(self.palette.exists())
+
+    def test_legacy_symlink_sync_does_not_rewrite_config(self):
+        target = self.put(self.home / 'dotfiles/kitty.conf',
+                          LEGACY_MARK.format('sekaipop') + '\ninclude sekaipop-colors.conf\n')
+        self.put(self.palette, HEADER.format('sekaipop') + '\n')
+        self.config.symlink_to(target)
+        before = target.stat()
+        self.apply(action='sync')
+        self.assertEqual((target.stat().st_ino, target.stat().st_mtime_ns),
+                         (before.st_ino, before.st_mtime_ns))
+        self.theme('revert')
+        self.assertTrue(self.config.is_symlink())
+        self.assertEqual(target.read_text(), '')
+
+    def test_sync_ignores_unrelated_audit_errors(self):
+        self.apply()
+        for problem in ('some_future_option 1\n', 'font_size nope\n', 'include missing.conf\n',
+                        'foreground $unexpanded\n', 'include extras.conf\ninclude ./extras.conf\n'):
+            with self.subTest(problem=problem):
+                self.put(self.directory / 'extras.conf', 'window_margin_width 7\n')
+                # Earlier invalid colour definitions cannot override the managed palette.
+                self.put(self.config, problem + '# sekaipop: kitty colours\ninclude sekaipop-colors.conf\n')
+                before = self.config.read_bytes()
+                self.apply('#112233', action='sync')
+                self.assertIn('background #112233', self.palette.read_text())
+                self.assertEqual(self.config.read_bytes(), before)
+                self.assertEqual(self.theme('status').strip(), 'on')
+                self.theme('check', success=False)
+                self.apply('#abc123', action='sync')
+
+    def test_status_detects_and_clears_managed_conflicts(self):
+        self.apply()
+        original = self.config.read_text()
+        for addition in ('background #112233\n', 'include sekaipop-colors.conf\n'):
+            self.put(self.config, original + addition)
+            self.assertEqual(self.theme('status').strip(), 'conflict')
+            self.put(self.config, original)
+            self.assertEqual(self.theme('status').strip(), 'on')
+        palette = self.palette.read_text()
+        self.put(self.palette, palette + 'color1 #123456\n')
+        self.assertEqual(self.theme('status').strip(), 'conflict')
+        self.put(self.palette, palette)
+        self.assertEqual(self.theme('status').strip(), 'on')
+
+    def test_repeated_user_include_still_checks_colour_precedence(self):
+        self.put(self.directory / 'other-theme.conf', 'background #224466\n')
+        self.put(self.config, 'include other-theme.conf\n')
+        self.apply()
+        with self.config.open('a') as f:
+            f.write('include ./other-theme.conf\n')
+        # Kitty skips a repeat of the same lexical path; unrelated duplicate errors
+        # must not block sync. A different symlink alias really does override colours.
+        self.apply('#112233', action='sync')
+        (self.directory / 'alias.conf').symlink_to('other-theme.conf')
+        with self.config.open('a') as f:
+            f.write('include alias.conf\n')
+        before = self.palette.read_bytes()
+        self.assertIn('overrides the SekaiPop include', self.apply('#334455', action='sync', success=False))
+        self.assertEqual(self.palette.read_bytes(), before)
+
+    def test_literal_dollar_include_matches_kitty_expansion(self):
+        self.env['literal'] = 'wrong-path'
+        self.put(self.directory / '$literal.conf', 'font_size 14\n')
+        original = 'include $$literal.conf\n'
+        self.put(self.config, original)
+        self.apply()
+        self.apply('#112233', action='sync')
+        self.assertEqual(self.effective(), '#112233 14.0')
+        self.theme('revert')
+        self.assertEqual(self.config.read_text(), original)
+
+    def test_revert_keeps_a_created_config_moved_behind_a_symlink(self):
+        self.apply()
+        target = self.home / 'dotfiles/kitty.conf'
+        target.parent.mkdir()
+        self.config.rename(target)
+        self.config.symlink_to(target)
+        self.theme('revert')
+        self.assertTrue(self.config.is_symlink())
+        self.assertEqual(target.read_text(), '')
+
+    def test_revert_without_kitty(self):
+        original = 'font_size 13\n'
+        self.put(self.config, original)
+        self.apply()
+        binaries = self.home / 'bin'
+        binaries.mkdir()
+        for name in ('sh', 'dirname', 'python3', 'bash', 'id', 'date', 'readlink'):
+            (binaries / name).symlink_to(shutil.which(name))
+        self.env['PATH'] = str(binaries)
+        self.assertEqual(self.theme('status').strip(), 'on')
+        self.theme('revert', '--dry-run')
+        self.assertTrue(self.palette.exists())
+        self.theme('revert')
+        self.assertEqual(self.config.read_text(), original)
+        self.assertFalse(self.palette.exists())
+
+        # Directory discovery must be identical for status and revert after uninstall.
+        self.env['PATH'] = os.environ['PATH']
+        self.apply()
+        fallback = self.home / '.config/kitty'
+        fallback.parent.mkdir()
+        self.directory.rename(fallback)
+        self.env['PATH'] = str(binaries)
+        self.assertEqual(self.theme('status').strip(), 'on')
+        self.theme('revert')
+        self.assertEqual((fallback / 'kitty.conf').read_text(), original)
+        self.assertFalse((fallback / 'sekaipop-colors.conf').exists())
+        # Both UI/script revert and the public installer restore use the same fallback.
+        self.env['PATH'] = os.environ['PATH']
+        self.apply()
+        self.env['PATH'] = str(binaries)
+        self.install('--restore-kitty')
+        self.assertEqual((fallback / 'kitty.conf').read_text(), original)
+        self.assertFalse((fallback / 'sekaipop-colors.conf').exists())
+
+    def test_reload_respects_only_config_and_palette_overrides(self):
+        proc = self.home / 'processes/123'
+        self.put(proc / 'comm', 'kitty\n')
+        self.put(proc / 'environ', '\0'.join(f'{k}={v}' for k, v in self.env.items()) + '\0')
+        for options, reload in ((['--class', 'dropdown', '-o', 'font_size=12'], True),
+                                (['--override', 'window_margin_width=8'], True),
+                                (['-o', ''], True),
+                                (['-o', '  '], True),
+                                (['-o', 'background=#123456'], False),
+                                (['-o', 'background #123456'], False),
+                                (['-o', 'color3=#123456'], False),
+                                (['--config', 'other.conf'], False)):
+            with self.subTest(options=options):
+                self.put(proc / 'cmdline', '\0'.join(['kitty', *options]) + '\0')
+                code = (f'import runpy; from pathlib import Path; from unittest.mock import patch; '
+                        f'h = runpy.run_path({str(THEMING / "kitty-theme.py")!r}); '
+                        f'p = patch.object(Path, "iterdir", return_value=iter([Path({str(proc)!r})])); '
+                        'p.start(); k = patch("os.kill"); calls = k.start(); '
+                        f'h["reload_windows"](Path({str(self.directory)!r})); '
+                        'print(calls.call_count)')
+                self.assertEqual(self.run_command(['kitty', '+runpy', code]).strip(), str(int(reload)))
 
     def test_user_reference_to_generated_file_survives_restore(self):
         self.put(self.config, 'font_size 11\n')
@@ -290,6 +439,28 @@ class KittyThemeTest(unittest.TestCase):
                 helper['write'](self.config, original, original + 'include sekaipop-colors.conf\n')
         self.assertEqual(self.config.read_text(), edited)
         self.assertEqual(list(self.directory.iterdir()), [self.config])
+
+    def test_write_preserves_a_symlink_retargeted_during_staging(self):
+        helper = runpy.run_path(str(THEMING / 'kitty-theme.py'))
+        original = 'font_size 13\n'
+        target = self.put(self.home / 'dotfiles/kitty.conf', original)
+        replacement = self.put(self.home / 'dotfiles/other.conf', original)
+        self.directory.mkdir(parents=True)
+        self.config.symlink_to(target)
+        mkstemp = tempfile.mkstemp
+
+        def stage_then_retarget(*args, **kwargs):
+            result = mkstemp(*args, **kwargs)
+            self.config.unlink()
+            self.config.symlink_to(replacement)
+            return result
+
+        with mock.patch.object(tempfile, 'mkstemp', stage_then_retarget):
+            with self.assertRaisesRegex(helper['Conflict'], 'changed during the operation'):
+                helper['write'](self.config, original, original + 'include sekaipop-colors.conf\n')
+        self.assertEqual(self.config.resolve(), replacement)
+        self.assertEqual(target.read_text(), original)
+        self.assertEqual(replacement.read_text(), original)
 
     def test_config_directory_override(self):
         directory = self.home / 'custom kitty'

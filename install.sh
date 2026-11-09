@@ -282,8 +282,10 @@ elif sh "$KITTY_THEME" check kitty; then
         [ "$DRY" = 1 ] && KITTY_FLAGS+=(--dry-run)
         if sh "$KITTY_THEME" enable kitty "${KITTY_FLAGS[@]}"; then
             if [ "$DRY" = 0 ]; then
-                ok "Kitty sync enabled. SekaiPop supplies the palette when the shell runs."
-                if have qs; then qs -p "$QS_DEST" ipc call apptheme syncKitty >/dev/null 2>&1 || true; fi
+                ok "Kitty colour sync is enabled."
+                if ! have qs || ! qs -p "$QS_DEST" ipc call apptheme syncKitty >/dev/null 2>&1; then
+                    warn "Start or restart SekaiPop to apply the current Kitty palette."
+                fi
             fi
         else
             fail "Kitty colour sync could not be enabled (see above)"
@@ -443,6 +445,8 @@ if [ "$DRY" = 0 ] && [ "$HYPR" = full ] && hypr_running; then
             setsid -f qs -c sekaipop >/dev/null 2>&1 && ok "shell started"
         fi
     fi
+elif [ "$DRY" = 0 ] && [ "$HYPR" = skip ] && [ "$REPLACED" = 1 ]; then
+    warn "Restart SekaiPop to load the installed shell if it is already running."
 elif [ "$DRY" = 0 ] && [ "$HYPR" != skip ] && [ "$REPLACED" = 1 ] && shell_running; then
     printf '\n'
     ask "The shell is running on the old files. Restart it now?" && restart_shell

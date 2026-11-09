@@ -1,4 +1,4 @@
-"""Audit and manage the Kitty include. Run in Kitty's Python via app-theme.sh."""
+"""Manage the Kitty include; use Kitty's parser for first-time configuration audits."""
 
 import fcntl
 import os
@@ -73,45 +73,52 @@ def logical_lines(text):
 
 
 class Audit:
-    def __init__(self, root, changes=None):
-        from kitty.colors import ThemeColors
-        from kitty.conf.utils import currently_parsing, key_pat
-        from kitty.options.parse import create_result_dict, parse_conf_item
-        from kitty.utils import expandvars, log_error
+    def __init__(self, root, changes=None, strict=True):
+        self.strict = strict
+        self.key_pat = re.compile(r'([a-zA-Z][a-zA-Z0-9_-]*)\s+(.+)$')
+        self.colour_keys = PALETTE.keys()
+        if strict:
+            from kitty.colors import ThemeColors
+            from kitty.conf.utils import currently_parsing, key_pat
+            from kitty.options.parse import create_result_dict, parse_conf_item
+            from kitty.utils import log_error
 
-        self.parse = parse_conf_item
-        self.options = create_result_dict()
-        self.parsing = currently_parsing
-        self.key_pat = key_pat
-        self.expandvars = expandvars
+            self.parse = parse_conf_item
+            self.options = create_result_dict()
+            self.parsing = currently_parsing
+            self.key_pat = key_pat
+            self.colour_keys = ThemeColors().get_default_colors().keys() | PALETTE.keys()
+            log_error.redirect = lambda message: self.errors.append(f'{self.location}: {message}')
         self.errors = []
         self.warnings = []
         self.references = {}
         self.colour_sources = {}
         self.last_colour = {}
         self.position = 0
-        self.colour_keys = ThemeColors().get_default_colors().keys() | PALETTE.keys()
         self.opaque = False
         self.changes = changes or {}
         self.seen = set()
         self.env_stack = set()
-        log_error.redirect = lambda message: self.errors.append(f'{self.location}: {message}')
         try:
             for path in (SYSTEM_CONF, root):
                 self.seen.clear()  # Kitty starts a separate include graph for each config.
                 self.scan(path, optional=True)
         finally:
-            del log_error.redirect
+            if strict:
+                del log_error.redirect
 
     def scan(self, path, source=None, optional=False):
         try:
             real = path.resolve()
             if source:
                 self.references.setdefault(real, []).append(self.position)
-            if real in self.seen:
+            # Kitty skips repeated lexical paths, but reads distinct symlink aliases.
+            # The initial audit also reports aliases of the same file as duplicates.
+            seen_key = real if self.strict else Path(os.path.abspath(path))
+            if seen_key in self.seen:
                 self.errors.append(f'{source}: duplicate or recursive reference to {path}')
                 return
-            self.seen.add(real)
+            self.seen.add(seen_key)
             text = self.changes[path] if path in self.changes else read(path)
             if text is not None:
                 self.scan_lines(text, path.parent, str(path))
@@ -136,10 +143,11 @@ class Audit:
                 if key in ('include', 'globinclude', 'envinclude', 'geninclude'):
                     self.include(key, value, base, where)
                     continue
-                self.location = where
-                with self.parsing.set_file(name), self.parsing.set_line(line, number):
-                    if not self.parse(key, value, self.options):
-                        self.errors.append(f'{where}: unknown config key {key}')
+                if self.strict:
+                    self.location = where
+                    with self.parsing.set_file(name), self.parsing.set_line(line, number):
+                        if not self.parse(key, value, self.options):
+                            self.errors.append(f'{where}: unknown config key {key}')
                 if key in self.colour_keys or re.fullmatch(r'color[0-9]+', key):
                     self.colour_sources.setdefault(name, set()).add(key)
                     self.last_colour[key] = (self.position, name, where)
@@ -147,7 +155,11 @@ class Audit:
                 self.errors.append(f'{where}: {key} {value!r}: {exc}')
 
     def include(self, key, value, base, where):
-        value = self.expandvars(os.path.expanduser(value), {'KITTY_OS': 'linux'})
+        # Match Kitty's expansion, with KITTY_OS taking precedence over the environment.
+        value = re.sub(r'\$(\w+)|\$\{([^}]+)\}',
+                       lambda m: 'linux' if (m[1] or m[2]) == 'KITTY_OS'
+                       else os.environ.get(m[1] or m[2], m[0]),
+                       os.path.expanduser(value).replace('$$', '\0')).replace('\0', '$')
         if key == 'geninclude':
             self.opaque = True
             self.errors.append(f'{where}: geninclude {value} requires manual review (generator was not run)')
@@ -182,7 +194,6 @@ def find_hook(config, root):
     markers = {
         MARK: (PALETTE_NAME, ''),
         MARK + ' (created config)': (PALETTE_NAME, 'created'),
-        MARK + ' (added newline)': (PALETTE_NAME, ''),  # The old marker cannot prove which newline is ours.
         **{LEGACY_MARK.format(name): (f'{name}-colors.conf', '') for name in ('sekaipop', OLD_NAME)},
     }
     hits = []
@@ -238,19 +249,21 @@ def legacy_palette(path, contents):
 
 def writable(path):
     try:
-        info = path.lstat()
+        info = path.stat()
     except FileNotFoundError:
         return 0o600
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
-        raise Conflict(f'{path}: expected a user-owned regular file without links; review it manually')
+        raise Conflict(f'{path}: expected a user-owned regular file without hard links; review it manually')
     return stat.S_IMODE(info.st_mode)
 
 
 def write(path, before, after):
+    # Replace the target atomically, preserving a dotfiles/stow symlink and its mode.
+    target = path.resolve()
     mode = writable(path)
 
     def verify():
-        if writable(path) != mode or read(path) != before:
+        if path.resolve() != target or writable(path) != mode or read(path) != before:
             raise Conflict(f'{path} changed during the operation; retry after reviewing it')
 
     if after is None:
@@ -258,13 +271,13 @@ def write(path, before, after):
             verify()
             path.unlink()
         return
-    fd, tmp = tempfile.mkstemp(prefix='.sekaipop-', dir=path.parent)
+    fd, tmp = tempfile.mkstemp(prefix='.sekaipop-', dir=target.parent)
     try:
         with os.fdopen(fd, 'wb') as f:
             os.fchmod(f.fileno(), mode)
             f.write(after.encode('utf-8', errors='surrogateescape'))
         verify()
-        os.replace(tmp, path)
+        os.replace(tmp, target)
     finally:
         Path(tmp).unlink(missing_ok=True)
 
@@ -294,12 +307,13 @@ def show(audit, root, palette):
         print(f'Kitty conflict: {error}', file=sys.stderr)
 
 
-def inspect(root, palette, changes=None):
-    audit = Audit(root, changes)
-    from kitty.colors import ThemeFile
-
-    for theme in ThemeFile:
-        path = root.parent / theme.value
+def inspect(root, palette, changes=None, strict=True):
+    audit = Audit(root, changes, strict=strict)
+    if not strict:
+        # Updating our own palette does not require repairing the user's other settings.
+        audit.errors.clear()
+    for filename in ('dark-theme.auto.conf', 'light-theme.auto.conf', 'no-preference-theme.auto.conf'):
+        path = root.parent / filename
         if os.path.lexists(path):
             audit.errors.append(f'{path}: Kitty automatic theme overrides kitty.conf; review it before enabling SekaiPop')
             audit.opaque = True
@@ -313,8 +327,11 @@ def inspect(root, palette, changes=None):
 
 def reload_windows(directory):
     # Limit SIGUSR1 to our user's Kitty GUIs using this default config directory.
-    from kitty.cli import parse_args
-    from kitty.utils import is_kitty_gui_cmdline
+    try:
+        from kitty.cli import parse_args, parse_override
+        from kitty.utils import is_kitty_gui_cmdline
+    except ImportError:
+        return  # Restoring config must also work after Kitty has been uninstalled.
 
     for proc in Path('/proc').iterdir():
         if not proc.name.isdecimal():
@@ -322,11 +339,12 @@ def reload_windows(directory):
         try:
             if proc.stat().st_uid != os.getuid() or (proc / 'comm').read_bytes().strip() != b'kitty':
                 continue
-            args = os.fsdecode((proc / 'cmdline').read_bytes()).rstrip('\0').split('\0')
+            args = os.fsdecode((proc / 'cmdline').read_bytes()).removesuffix('\0').split('\0')
             if not is_kitty_gui_cmdline(*args):
                 continue
             options, _ = parse_args(args[1:])
-            if options.config or options.override:
+            if options.config or any(value.strip() and parse_override(value).split(maxsplit=1)[0] in PALETTE
+                                     for value in options.override):
                 continue
             env = dict(item.split('=', 1) for item in os.fsdecode((proc / 'environ').read_bytes()).split('\0') if '=' in item)
             if config_directory(env).resolve() == directory.resolve():
@@ -341,6 +359,17 @@ def change(action, root, args, dry):
     hook = find_hook(config, root)
     palette = hook[2] if hook else root.parent / PALETTE_NAME
     if action == 'status':
+        if hook:
+            before = read(palette)
+            audit = inspect(root, palette, strict=False)
+            writable(palette)
+            if not os.access(palette.resolve().parent, os.W_OK):
+                raise Conflict(f'{palette}: palette directory is not writable')
+            if (audit.errors or len(audit.references.get(palette.resolve(), [])) != 1
+                    or (before is not None and not owned_palette(palette, before)
+                        and not legacy_palette(palette, before))):
+                print('conflict')
+                return
         print('on' if hook else 'off')
         return
     if action == 'check':
@@ -360,9 +389,9 @@ def change(action, root, args, dry):
         if hook:
             start, end, _, created = hook
             restored = config[:start] + config[end:]
-            if created and not restored:
+            if created and not restored and not root.is_symlink():
                 restored = None
-        audit = Audit(root, {root: restored})
+        audit = Audit(root, {root: restored}, strict=False)
         if hook:
             writable(root)
             if dry:
@@ -398,8 +427,6 @@ def change(action, root, args, dry):
         if any(not re.fullmatch(r'#[0-9a-fA-F]{6}', values.get(key, '')) for key in PALETTE.values()):
             raise Conflict('Kitty palette is incomplete or contains invalid colours')
         body = ''.join(f'{key} {values[name]}\n' for key, name in PALETTE.items())
-        if legacy and action == 'sync' and before not in (palette_header(palette), palette_header(palette) + body):
-            raise Conflict(f'{palette}: older palette differs from current colours; review it before applying Kitty colours explicitly')
         after = managed_palette(palette, body)
 
     proposed = config
@@ -412,11 +439,12 @@ def change(action, root, args, dry):
             marker = f'{NEWLINE_PREFIX}{digest(config)})'
             proposed += newline
         proposed += f'{marker}{newline}include {palette.name}{newline}'
-    audit = inspect(root, palette, {root: proposed, palette: after})
+    audit = inspect(root, palette, {root: proposed, palette: after}, strict=proposed != config)
     if audit.errors or len(audit.references.get(palette.resolve(), [])) != 1:
         show(audit, root, palette)
         raise Conflict('Kitty colour sync needs an unambiguous, valid include. Review the reported config before retrying.')
-    writable(root)
+    if proposed != config:
+        writable(root)
     if after != before:
         writable(palette)
     if dry:
@@ -442,14 +470,16 @@ def change(action, root, args, dry):
 def main():
     action, *args = sys.argv[1:]
     dry = '--dry-run' in args
-    original_dir = os.environ.pop('SEKAIPOP_KITTY_CONFIG_DIRECTORY', '')
-    if original_dir:
-        os.environ['KITTY_CONFIG_DIRECTORY'] = original_dir
-    else:
-        os.environ.pop('KITTY_CONFIG_DIRECTORY', None)
+    if 'SEKAIPOP_KITTY_CONFIG_DIRECTORY' in os.environ:
+        original_dir = os.environ.pop('SEKAIPOP_KITTY_CONFIG_DIRECTORY')
+        if original_dir:
+            os.environ['KITTY_CONFIG_DIRECTORY'] = original_dir
+        else:
+            os.environ.pop('KITTY_CONFIG_DIRECTORY', None)
     directory = config_directory(os.environ)
     # Use the chosen directory for Kitty's option parser without asking its launcher to create it.
-    sys.kitty_run_data['config_dir'] = str(directory)
+    if hasattr(sys, 'kitty_run_data'):
+        sys.kitty_run_data['config_dir'] = str(directory)
     root = directory / 'kitty.conf'
     if action not in ('check', 'status') and directory.exists() and directory.stat().st_uid != os.getuid():
         raise Conflict(f'{directory}: Kitty config directory is not owned by this user')
@@ -472,4 +502,7 @@ if __name__ == '__main__':
         main()
     except (Conflict, OSError, ImportError) as exc:
         print(f'Kitty: {exc}', file=sys.stderr)
+        if sys.argv[1] == 'status':
+            print('conflict')
+            sys.exit(0)
         sys.exit(1)

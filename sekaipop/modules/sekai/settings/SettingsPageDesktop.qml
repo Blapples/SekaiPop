@@ -8,6 +8,7 @@ SettingsPage {
     id: page
 
     readonly property var src: host ? host.source : null
+    onVisibleChanged: if (visible) AppThemeService.refreshStatus()
 
     // The lockscreen wallpaper's name (no folder, no extension), for its tile.
     readonly property string lockName: {
@@ -1041,7 +1042,7 @@ SettingsPage {
                     icon: appRow.modelData.icon
                     label: appRow.modelData.label
                     detail: appRow.themeState === "not installed" ? "Not installed"
-                            : appRow.themeState === "conflict" ? "Kitty config needs review · see the shell log"
+                            : appRow.themeState === "conflict" ? "Config needs review · see the shell log"
                             : appRow.modelData.id === "hyprland" && HyprlandSettings.isLua && !HyprlandSettings.linked
                               ? "Live now; see the Hyprland page's one-time setup to keep it"
                               : appRow.modelData.note
@@ -1053,7 +1054,7 @@ SettingsPage {
                     x: appToggle.width + 16
                     icon: "undo"
                     label: "Revert"
-                    detail: appRow.themeState === "applied" || (appRow.modelData.id === "kitty" && appToggle.checked)
+                    detail: appRow.themeState === "applied" || appToggle.checked
                             ? "Take our colours off" : "Nothing applied"
                     onActivated: AppThemeService.revert(appRow.modelData.id)
                 }
