@@ -9,7 +9,7 @@ const locate = require("../lib/locate.js")
 const source = fs.readFileSync(process.env.APP_THEME_SERVICE_SOURCE || locate("services/AppThemeService.qml"), "utf8")
 
 function service() {
-    const root = { status: {}, failures: {}, kittyFailed: false, queue: [], settled: true, script: "app-theme.sh" }
+    const root = { status: {}, failures: {}, queue: [], settled: true, script: "app-theme.sh" }
     const preferences = {}, writes = [], commands = []
     const runner = { running: false, exec(args) { this.running = true; commands.push(args) } }
     const statusProc = { running: false, pending: false, exec() { this.running = true } }
@@ -113,6 +113,15 @@ test("manual repair or disable clears a failed sync on a fresh status response",
     }
 })
 
+test("a repaired blocked hook awaiting colours does not retain the previous sync error", () => {
+    const s = service()
+    s.complete("sync", "kitty", 1)
+    s.status({ kitty: "blocked" })
+    assert.equal(s.root.stateOf("kitty"), "conflict")
+    s.status({ kitty: "pending" })
+    assert.equal(s.root.stateOf("kitty"), "pending")
+})
+
 test("an on status cannot dismiss a sync IO failure it has not diagnosed", () => {
     const s = service()
     s.status({ kitty: "on" })
@@ -135,16 +144,19 @@ test("a missing executable is not a successful retry", () => {
     assert.equal(s.root.stateOf("kitty"), "conflict")
 })
 
-test("status started before a new failure cannot clear that failure", () => {
+test("status started before a new failure cannot discard that failure", () => {
     const s = service()
     s.complete("sync", "kitty", 1)
-    s.status({ kitty: "conflict" })
+    s.status({ kitty: "blocked" })
     s.root.refreshStatus()
     s.complete("sync", "kitty", 1)
-    s.status({ kitty: "on" })
-    assert.equal(s.root.stateOf("kitty"), "conflict")
-    s.status({ kitty: "on" })
-    assert.equal(s.root.stateOf("kitty"), "applied")
+    const newFailure = s.root.failures.kitty
+    s.status({ kitty: "blocked" })
+    assert.equal(s.root.failures.kitty, newFailure)
+    s.status({ kitty: "blocked" })
+    assert.equal(s.root.failures.kitty, undefined)
+    s.status({ kitty: "pending" })
+    assert.equal(s.root.stateOf("kitty"), "pending")
 })
 
 test("a verified but blocked hook keeps the switch enabled so it can be turned off", () => {
@@ -157,18 +169,19 @@ test("a verified but blocked hook keeps the switch enabled so it can be turned o
     assert.deepEqual(s.writes, [])
 })
 
-test("dynamic uncertainty is separate from installation and explicit failures", () => {
+test("backend configuration errors need no duplicate sync failure record", () => {
     const s = service()
-    s.status({ kitty: "uncertain" })
+    s.status({ kitty: "blocked" })
     assert.equal(s.root.enabled("kitty"), true)
-    assert.equal(s.root.stateOf("kitty"), "uncertain")
+    assert.equal(s.root.stateOf("kitty"), "conflict")
     s.complete("sync", "kitty", 1)
-    s.status({ kitty: "uncertain" })
-    assert.equal(s.root.stateOf("kitty"), "uncertain")
+    s.status({ kitty: "blocked" })
+    assert.equal(s.root.failures.kitty, undefined)
+    assert.equal(s.root.stateOf("kitty"), "conflict")
     s.status({ kitty: "on" })
     assert.equal(s.root.stateOf("kitty"), "applied")
-    s.complete("apply", "kitty", 1)
-    s.status({ kitty: "uncertain" })
+    s.complete("enable", "kitty", 1)
+    s.status({ kitty: "blocked" })
     assert.equal(s.root.stateOf("kitty"), "conflict")
     assert.equal(s.root.enabled("kitty"), true)
 })
@@ -213,7 +226,7 @@ test("Kitty is independent of Fish and prompt preferences; enabled saved targets
     const s = service()
     s.root.setEnabled("kitty", true)
     assert.deepEqual(s.writes, [])
-    assert.deepEqual(Array.from(s.commands[0]), ["sh", "app-theme.sh", "apply", "kitty", "background=#123456"])
+    assert.deepEqual(Array.from(s.commands[0]), ["sh", "app-theme.sh", "enable", "kitty", "background=#123456"])
     s.runner.running = false
     s.root.setEnabled("fish", true)
     assert.deepEqual(s.writes, [["appTheme.fish", true]])

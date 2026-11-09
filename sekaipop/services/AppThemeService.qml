@@ -46,7 +46,7 @@ Singleton {
     readonly property var targets: [
         { id: "kitty", label: "kitty", icon: "terminal", scripts: ["kitty"],
           statusDriven: true, syncAction: "sync", enableAction: "enable",
-          installedStates: ["on", "blocked", "uncertain", "pending"],
+          installedStates: ["on", "blocked", "pending"],
           note: "Open windows recolour at once" },
         { id: "foot", label: "foot", icon: "terminal", scripts: ["foot"],
           note: "New windows (foot never re-reads its config)" },
@@ -209,7 +209,7 @@ Singleton {
             return
         const next = Object.assign({}, root.failures)
         if (exitCode !== 0)
-            next[script] = { action: action, conflict: ["blocked", "uncertain", "conflict"].includes(root.status[script]) }
+            next[script] = { action: action }
         else
             delete next[script]
         root.failures = next
@@ -259,7 +259,7 @@ Singleton {
             for (const s of t.scripts)
                 root.enqueue([t.enableAction, s])
         } else if (on)
-            root.applyScripts(t.scripts)
+            root.applyScripts(t.scripts, t.enableAction || "apply")
         else
             root.revertScripts(t.scripts)
     }
@@ -320,40 +320,32 @@ Singleton {
                 continue
             for (const s of t.scripts) {
                 const failure = next[s]
-                // A diagnosed hook conflict can be cleared by manual repair/removal.
-                // An unchanged "on" cannot prove an IO error was repaired, nor does
-                // status validate a refused first enable. Ignore older responses.
-                if (failure && failure === failuresAtStart[s] && failure.action === t.syncAction) {
-                    if (st[s] === "off" || (st[s] === "on" && failure.conflict))
-                        delete next[s]
-                    else if (["blocked", "uncertain", "conflict"].includes(st[s]) && !failure.conflict)
-                        next[s] = { action: failure.action, conflict: true }
-                }
+                // Config trouble is already represented by status, not a second
+                // remembered error. Keep unknown IO failures while on/pending, and
+                // explicit action failures until retried. Ignore older responses.
+                if (failure && failure === failuresAtStart[s] && failure.action === t.syncAction
+                        && ["blocked", "conflict", "off", "missing"].includes(st[s]))
+                    delete next[s]
             }
         }
         root.failures = next
     }
 
     // The state of one switch's apps, for the Settings detail line:
-    // "applied", "not installed", "conflict", "uncertain", "pending" or "off".
+    // "applied", "not installed", "conflict", "pending" or "off".
     function stateOf(id) {
         const t = root.target(id)
         if (!t)
             return ""
-        let on = 0, missing = 0, uncertain = 0, pending = 0
+        let on = 0, missing = 0, pending = 0
         for (const s of t.scripts) {
             const v = root.status[s]
-            const failure = root.failures[s]
-            if (v === "uncertain" && (!failure || failure.action === t.syncAction))
-                uncertain++
-            else if (failure || v === "conflict" || v === "blocked")
+            if (root.failures[s] || v === "conflict" || v === "blocked")
                 return "conflict"
             if (v === "on") on++
             else if (v === "pending") pending++
             else if (v === "missing") missing++
         }
-        if (uncertain > 0)
-            return "uncertain"
         if (pending > 0)
             return "pending"
         if (on > 0)
@@ -393,6 +385,10 @@ Singleton {
 
     IpcHandler {
         target: "apptheme"
+
+        function kittyProtocol(): string {
+            return "enable-only"
+        }
 
         function apply(id: string): void {
             const list = id === "all" ? root.targets : [root.target(id)].filter(t => t)

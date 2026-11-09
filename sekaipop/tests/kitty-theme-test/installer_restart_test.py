@@ -1,4 +1,4 @@
-"""Exercise installer restart guidance with a simulated running Quickshell."""
+"""Exercise installer boundaries without mutating a running Quickshell's environment."""
 
 import os
 import shutil
@@ -66,29 +66,49 @@ class InstallerRestartTest(unittest.TestCase):
         self.assertIn('Restart SekaiPop to load the installed shell', output)
         self.assertEqual((self.installed / 'shell.qml').read_text(), '// new shell\n')
 
-    def test_old_process_without_sync_ipc_gets_guidance_even_if_files_match(self):
+    def test_enable_never_calls_a_running_shell(self):
         self.installed.parent.mkdir(parents=True)
         shutil.copytree(self.rice, self.installed)
-        output = self.install('--kitty', 'enable')
-        self.assertIn('Start or restart SekaiPop to apply the current Kitty palette', output)
-        self.assertIn('ipc call apptheme syncKitty', (self.home / 'qs-calls').read_text())
+        for code, diagnostic in (('1', ''), ('0', 'Function not found.'), ('0', '')):
+            with self.subTest(code=code, diagnostic=diagnostic):
+                self.env['TEST_IPC_RESULT'] = code
+                self.env['TEST_IPC_OUTPUT'] = diagnostic
+                output = self.install('--kitty', 'enable')
+                self.assertFalse((self.home / 'qs-calls').exists())
+                self.assertIn('Kitty hook is ready; palette sync is not yet confirmed', output)
+                self.assertIn('same KITTY_CONFIG_DIRECTORY', output)
+                self.assertNotIn('Kitty colour sync is enabled.', output)
 
-    def test_successful_sync_has_no_failure_guidance(self):
-        self.installed.parent.mkdir(parents=True)
-        shutil.copytree(self.rice, self.installed)
-        self.env['TEST_IPC_RESULT'] = '0'
-        output = self.install('--kitty', 'enable')
-        self.assertNotIn('Start or restart SekaiPop to apply the current Kitty palette', output)
+    def test_restore_dry_run_cannot_fall_back_to_an_old_installed_script(self):
+        palette = self.write(self.home / 'config/kitty/sekaipop-colors.conf', '# user colours\n')
+        # The original upstream revert ignored extra arguments such as --dry-run.
+        legacy = self.write(self.installed / 'scripts/theming/app-theme.sh',
+                            '#!/bin/sh\nrm -f "$HOME/config/kitty/sekaipop-colors.conf"\n')
+        result = subprocess.run(['bash', str(self.installer), '--restore-kitty', '--dry-run'],
+                                env=self.env, capture_output=True, text=True, timeout=10)
+        self.assertTrue(palette.exists(), result.stdout + result.stderr)
+        self.assertEqual(palette.read_text(), '# user colours\n')
+        self.assertTrue(legacy.exists())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('bundled Kitty helper', result.stdout + result.stderr)
 
-    def test_missing_handler_with_zero_exit_still_requests_restart(self):
-        # Real Quickshell 0.3.2 writes this diagnostic to stdout and exits zero.
-        self.installed.parent.mkdir(parents=True)
-        shutil.copytree(self.rice, self.installed)
-        self.env['TEST_IPC_RESULT'] = '0'
-        self.env['TEST_IPC_OUTPUT'] = 'Function not found.'
+    @unittest.skipUnless(shutil.which('kitty'), 'requires the Kitty executable')
+    def test_enable_does_not_sync_another_shells_config_directory(self):
+        for name in ('app-theme.sh', 'kitty-theme.py'):
+            shutil.copy(REPO / 'sekaipop/scripts/theming' / name,
+                        self.rice / 'scripts/theming' / name)
+        custom = self.home / 'installer-kitty'
+        self.env['KITTY_CONFIG_DIRECTORY'] = str(custom)
+        # Simulate a running shell which inherited a different config directory.
+        qs = self.home / 'bin/qs'
+        qs.write_text('#!/bin/sh\n'
+                      'case "$*" in *"ipc call apptheme syncKitty") '
+                      'mkdir -p "$HOME/service-kitty"; '
+                      'printf "background #112233\\n" > "$HOME/service-kitty/sekaipop-colors.conf" ;; esac\n')
         output = self.install('--kitty', 'enable')
-        self.assertIn('Start or restart SekaiPop to apply the current Kitty palette', output)
-        self.assertNotIn('Restart SekaiPop to load the installed shell', output)
+        self.assertTrue((custom / 'kitty.conf').exists())
+        self.assertFalse((self.home / 'service-kitty').exists())
+        self.assertIn('same KITTY_CONFIG_DIRECTORY', output)
 
     @unittest.skipUnless(shutil.which('kitty'), 'requires the Kitty executable')
     def test_repeated_enable_ignores_unrelated_errors_like_the_helper(self):

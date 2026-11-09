@@ -109,13 +109,13 @@ banner "SekaiPop installer" "Quickshell + Hyprland desktop"
 if [ "$RESTORE_KITTY" = 1 ]; then
     step "Restoring Kitty colours"
     KITTY_THEME="$HERE/sekaipop/scripts/theming/app-theme.sh"
-    [ -f "$KITTY_THEME" ] || KITTY_THEME="$QS_DEST/scripts/theming/app-theme.sh"
+    if [ ! -f "$KITTY_THEME" ] || [ ! -f "$HERE/sekaipop/scripts/theming/kitty-theme.py" ]; then
+        echo "The bundled Kitty helper is missing. Run --restore-kitty from a complete current SekaiPop checkout." >&2
+        exit 1
+    fi
     KITTY_FLAGS=()
     [ "$DRY" = 1 ] && KITTY_FLAGS+=(--dry-run)
     sh "$KITTY_THEME" revert kitty "${KITTY_FLAGS[@]}" || exit $?
-    if [ "$DRY" = 0 ] && have qs && [ -f "$QS_DEST/shell.qml" ]; then
-        qs -p "$QS_DEST" ipc call apptheme syncKitty >/dev/null 2>&1 || true
-    fi
     exit 0
 fi
 
@@ -284,13 +284,8 @@ elif [ "$KITTY" = enable ] || sh "$KITTY_THEME" check kitty; then
         [ "$DRY" = 1 ] && KITTY_FLAGS+=(--dry-run)
         if sh "$KITTY_THEME" enable kitty "${KITTY_FLAGS[@]}"; then
             if [ "$DRY" = 0 ]; then
-                ok "Kitty colour sync is enabled."
-                # A successful void IPC call is silent. Quickshell 0.3.2 can print
-                # "Function not found." yet return zero when an old shell is running.
-                if ! have qs || ! kitty_ipc_output=$(qs -p "$QS_DEST" ipc call apptheme syncKitty 2>&1) ||
-                    [ -n "$kitty_ipc_output" ]; then
-                    warn "Start or restart SekaiPop to apply the current Kitty palette."
-                fi
+                ok "Kitty hook is ready; palette sync is not yet confirmed."
+                info "Start or restart SekaiPop with the same KITTY_CONFIG_DIRECTORY to supply the palette."
             fi
         else
             fail "Kitty colour sync could not be enabled (see above)"

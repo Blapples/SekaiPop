@@ -6,7 +6,7 @@
 #   app-theme.sh apply <target> key=#rrggbb ...   write the colours (and hook them in)
 #   app-theme.sh revert <target>                  remove everything `apply` added
 #   app-theme.sh status                           one target=state per line
-# Kitty: on/blocked/uncertain/pending have a verified hook; conflict does not.
+# Kitty: on/blocked/pending have a verified hook; conflict does not.
 # Other states are off (no hook) and missing (Kitty absent and no hook).
 #   app-theme.sh check|enable|sync kitty           inspect, opt in, or refresh an existing Kitty hook
 #
@@ -22,7 +22,8 @@
 # A config file that doesn't exist yet is only created when the app is installed.
 #
 #   kitty   kitty-theme.py manages a single final include in Kitty's config and reloads
-#           open windows. The include is also the opt-in for future palette updates.
+#           open windows. Only `enable kitty` adds the include; apply/sync refresh it.
+#           Revert removes only the include and retains all config/palette files.
 #   foot    ~/.config/foot/sekaipop-colors.ini, `include=` at the TOP of foot.ini
 #           (foot only allows it there, so a [colors] section of your own further
 #           down still wins: remove it to let ours show). Foot never re-reads its
@@ -79,9 +80,10 @@ kitty_theme() {
         "$here/kitty-theme.py" "$@"
 }
 
-# Kitty's explicit apply and automatic sync are separate operations.
+# Only enable installs a hook; old background apply calls are refresh-only.
 if [ "${2-}" = kitty ]; then
     cmd="$1"; shift 2
+    [ "$cmd" != apply ] || cmd=sync
     case "$cmd" in
         check|status|enable|apply|sync|revert) kitty_theme "$cmd" "$@"; exit $? ;;
     esac

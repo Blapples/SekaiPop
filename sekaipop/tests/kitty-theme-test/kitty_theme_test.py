@@ -53,7 +53,7 @@ class KittyThemeTest(unittest.TestCase):
     def theme(self, action, *args, success=True):
         return self.run_command(['sh', SCRIPT, action, 'kitty', *args], success)
 
-    def apply(self, colour='#abc123', action='apply', success=True):
+    def apply(self, colour='#abc123', action='enable', success=True):
         return self.theme(action, *(f'{key}={colour}' for key in COLOUR_ARGS), success=success)
 
     def effective(self):
@@ -68,7 +68,7 @@ class KittyThemeTest(unittest.TestCase):
         return self.run_command(['bash', REPO / 'install.sh', '--yes', '--hypr', 'skip',
                                  '--no-deps', *args], success)
 
-    def test_fresh_opt_in_and_exact_restore(self):
+    def test_fresh_opt_in_and_detach_without_deleting_files(self):
         self.assertIn('(new)', self.theme('check'))
         self.theme('enable', '--dry-run')
         self.apply(action='sync')
@@ -78,10 +78,12 @@ class KittyThemeTest(unittest.TestCase):
         self.apply(action='sync')
         self.assertEqual(self.effective().split()[0], '#abc123')
         self.theme('revert')
-        self.assertFalse(self.config.exists())
-        self.assertFalse(self.palette.exists())
+        self.assertEqual(self.config.read_text(), '')
+        retained = self.palette.read_bytes()
         self.apply(action='sync')
-        self.assertFalse(self.config.exists())
+        self.apply(action='apply')
+        self.assertEqual(self.config.read_text(), '')
+        self.assertEqual(self.palette.read_bytes(), retained)
 
     def test_end4_reports_bad_template_then_can_enable(self):
         generated = self.put(self.home / '.local/state/quickshell/user/generated/terminal/kitty-theme.conf',
@@ -103,15 +105,13 @@ class KittyThemeTest(unittest.TestCase):
         self.assertEqual(self.config.read_text(), '#' + original)
         self.assertIn('$term0', generated.read_text())
 
-    def test_other_dynamic_theme_and_complex_config(self):
+    def test_other_generated_theme_and_complex_static_config(self):
         generated = self.put(self.directory / 'nested' / 'arbitrary-name',
                              'background rgb:11/22/33\nforeground white\ncolor1 red\n')
         settings = self.put(self.directory / 'nested' / 'settings.conf',
-                            'include $DYNAMIC_THEME\nfont_size 12\nmap ctrl+shift+c copy_to_clipboard\n')
-        original = ('# user config\r\nglobinclude nested/*.conf\r\nenvinclude TEST_KITTY_CONFIG\r\n'
+                            'include arbitrary-name\nfont_size 12\nmap ctrl+shift+c copy_to_clipboard\n')
+        original = ('# user config\r\nglobinclude nested/*.conf\r\nfont_size 14\r\ncursor none\r\n'
                     'window_margin_width\r\n  \\ 12\r\nbackground #334455')
-        self.env['TEST_KITTY_CONFIG'] = 'font_size 14\ncursor none'
-        self.env['DYNAMIC_THEME'] = generated.name
         self.put(self.config, original)
         fish = self.put(self.home / 'config/fish/config.fish', 'starship init fish | source\n')
         self.assertIn(str(generated), self.theme('check'))
@@ -126,7 +126,7 @@ class KittyThemeTest(unittest.TestCase):
         self.assertFalse((fish.parent / 'conf.d').exists())
         self.assertIn('map ctrl+shift+c', settings.read_text())
         self.theme('revert')
-        self.assertEqual(self.config.read_bytes(), original.encode())
+        self.assertEqual(self.config.read_bytes(), (original + '\r\n').encode())
         self.assertEqual(self.effective(), '#334455 14.0')
         self.assertIn('rgb:11/22/33', generated.read_text())
 
@@ -135,7 +135,7 @@ class KittyThemeTest(unittest.TestCase):
         self.put(self.config, 'include absent.conf\ninclude nested.conf\ninclude ./nested.conf\n'
                  'globinclude snippets/*.conf\nfont_size nope\ninvalid line\nmissing-value\n')
         diagnostic = self.theme('check', success=False)
-        for message in ('missing include', 'duplicate or recursive reference', 'matched no files',
+        for message in ('Could not find included config file', 'already been included', 'matched no files',
                         'font_size', 'unknown config key', 'invalid config line'):
             self.assertIn(message, diagnostic)
         self.theme('enable', success=False)
@@ -149,16 +149,16 @@ class KittyThemeTest(unittest.TestCase):
         self.put(self.directory / 'dark-theme.auto.conf', 'background #123456\n')
         self.put(self.config, 'geninclude theme.sh\n')
         diagnostic = self.theme('check', success=False)
-        self.assertIn('generator was not run', diagnostic)
+        self.assertIn('dynamic input was not evaluated', diagnostic)
         self.assertIn('automatic theme overrides kitty.conf', diagnostic)
         self.theme('enable', success=False)
         self.assertFalse(marker.exists())
 
     def test_glob_cannot_capture_a_new_managed_palette(self):
-        original = 'font_size 12\nglobinclude **/sekaipop*.conf\n'
+        original = 'font_size 12\nglobinclude sekaipop*.conf\n'
         self.put(self.config, original)
         self.assertIn('matched no files', self.theme('check'))
-        self.assertIn('duplicate or recursive reference', self.apply(success=False))
+        self.assertIn('already been included', self.apply(success=False))
         self.assertEqual(self.config.read_text(), original)
         self.assertFalse(self.palette.exists())
 
@@ -192,7 +192,7 @@ class KittyThemeTest(unittest.TestCase):
                 self.put(self.palette, edited)
                 self.apply(action='sync', success=False)
                 self.theme('revert')
-                self.assertFalse(self.config.exists())
+                self.assertEqual(self.config.read_text(), '')
                 self.assertEqual(self.palette.read_text(), edited)
                 self.palette.unlink()
 
@@ -211,7 +211,7 @@ class KittyThemeTest(unittest.TestCase):
                 self.assertEqual(self.effective(), '#112233 12.0')
                 self.theme('revert')
                 self.assertEqual(self.config.read_text(), original)
-                self.assertFalse(palette.exists())
+                self.assertTrue(palette.exists())
 
     def test_restore_keeps_an_unsigned_legacy_palette(self):
         previous = f'{HEADER.format("sekaipop")}\nbackground #112233\n'
@@ -245,7 +245,7 @@ class KittyThemeTest(unittest.TestCase):
         self.assertTrue(self.config.is_symlink())
         self.assertEqual(self.config.resolve(), target)
         self.assertEqual(target.read_text(), original)
-        self.assertFalse(self.palette.exists())
+        self.assertTrue(self.palette.exists())
 
     def test_legacy_symlink_sync_does_not_rewrite_config(self):
         target = self.put(self.home / 'dotfiles/kitty.conf',
@@ -339,74 +339,62 @@ class KittyThemeTest(unittest.TestCase):
         self.theme('revert')
         self.assertTrue(self.palette.is_symlink())
         self.assertEqual(target.read_bytes(), original)
-        self.assertFalse(self.config.exists())
+        self.assertEqual(self.config.read_text(), '')
 
-    def test_dangling_config_link_is_restored_after_enable(self):
+    def test_dangling_config_link_requires_manual_target_creation(self):
         target = self.home / 'dotfiles/kitty.conf'
         target.parent.mkdir()
         self.directory.mkdir(parents=True)
         self.config.symlink_to(target)
-        self.theme('enable', '--dry-run')
-        self.assertFalse(target.exists())
-        self.theme('enable')
-        self.assertTrue(target.exists())
-        self.theme('revert', '--dry-run')
-        self.assertTrue(target.exists())
-        self.theme('revert')
-        self.assertTrue(self.config.is_symlink())
-        self.assertEqual(self.config.readlink(), target)
-        self.assertFalse(target.exists())
-
-    def test_created_link_target_keeps_later_user_edits_or_relocation(self):
-        target = self.home / 'dotfiles/kitty.conf'
-        target.parent.mkdir()
-        self.directory.mkdir(parents=True)
-        self.config.symlink_to(target)
+        for args in (('--dry-run',), ()):
+            self.assertIn('dangling config link', self.theme('enable', *args, success=False))
+            self.assertTrue(self.config.is_symlink())
+            self.assertFalse(target.exists())
+            self.assertFalse(self.palette.exists())
+        self.put(target, 'font_size 13\n')
         self.apply()
-        with target.open('a') as f:
-            f.write('font_size 13\n')
         self.theme('revert')
         self.assertEqual(target.read_text(), 'font_size 13\n')
-        target.unlink()
-        self.apply()
-        relocated = target.with_name('relocated.conf')
-        target.rename(relocated)
-        self.config.unlink()
-        self.config.symlink_to(relocated)
-        self.theme('revert')
-        self.assertEqual(self.config.resolve(), relocated)
-        self.assertEqual(relocated.read_text(), '')
 
-    def test_failed_apply_rolls_back_dangling_palette_target_without_unlinking(self):
-        target = self.home / 'dotfiles/palette.conf'
-        target.parent.mkdir()
+    def test_old_created_target_marker_only_detaches_the_hook(self):
+        helper = runpy.run_path(str(THEMING / 'kitty-theme.py'))
+        target = self.home / 'dotfiles/kitty.conf'
+        marker = '# sekaipop: kitty colours (created symlink target sha256=' + helper['digest'](str(target)) + ')'
+        self.put(target, marker + '\ninclude sekaipop-colors.conf\nfont_size 13\n')
+        self.directory.mkdir(parents=True)
+        self.config.symlink_to(target)
+        self.theme('revert')
+        self.assertTrue(self.config.is_symlink())
+        self.assertEqual(target.read_text(), 'font_size 13\n')
+
+    def test_failed_config_write_keeps_palette_for_retry(self):
         original = 'font_size 13\n'
         self.put(self.config, original)
-        self.palette.symlink_to(target)
         args = [f'{key}=#abc123' for key in COLOUR_ARGS]
-        code = f'''
+        code = f"""
 import runpy
 from pathlib import Path
 h = runpy.run_path({str(THEMING / 'kitty-theme.py')!r})
+write = h['File'].write
 root = Path({str(self.config)!r})
-write = h['write']
-def refuse_root(path, before, after, **kwargs):
-    if path == root:
+def refuse_root(file, after):
+    if file.path == root:
         raise h['Conflict']('injected config write failure')
-    write(path, before, after, **kwargs)
-h['change'].__globals__['write'] = refuse_root
+    write(file, after)
+h['File'].write = refuse_root
 try:
-    h['change']('apply', root, {args!r}, False)
+    h['change']('enable', root, {args!r}, False)
 except h['Conflict'] as error:
     print(error)
 else:
     raise RuntimeError('write failure was not exercised')
-'''
+"""
         self.assertIn('injected config write failure', self.run_command(['kitty', '+runpy', f'exec({code!r}, {{}})']))
         self.assertEqual(self.config.read_text(), original)
-        self.assertTrue(self.palette.is_symlink())
-        self.assertEqual(self.palette.readlink(), target)
-        self.assertFalse(target.exists())
+        self.assertIn('background #abc123', self.palette.read_text())
+        self.assertEqual(self.theme('status').strip(), 'off')
+        self.apply()
+        self.assertEqual(self.theme('status').strip(), 'on')
 
     def test_dynamic_include_does_not_claim_successful_sync(self):
         self.apply('#445566')
@@ -422,9 +410,9 @@ else:
         self.assertTrue(ran.exists())
         ran.unlink()
         before = self.palette.read_bytes()
-        self.assertEqual(self.theme('status').strip(), 'uncertain')
+        self.assertEqual(self.theme('status').strip(), 'blocked')
         output = self.apply('#112233', action='sync', success=False)
-        self.assertIn('generator was not run', output)
+        self.assertIn('dynamic input was not evaluated', output)
         self.assertEqual(self.palette.read_bytes(), before)
         self.assertFalse(ran.exists())
 
@@ -474,12 +462,12 @@ else:
         for name in ('sh', 'dirname', 'python3', 'bash', 'id', 'date', 'readlink'):
             (binaries / name).symlink_to(shutil.which(name))
         self.env['PATH'] = str(binaries)
-        self.assertEqual(self.theme('status').strip(), 'on')
+        self.assertEqual(self.theme('status').strip(), 'blocked')
         self.theme('revert', '--dry-run')
         self.assertTrue(self.palette.exists())
         self.theme('revert')
         self.assertEqual(self.config.read_text(), original)
-        self.assertFalse(self.palette.exists())
+        self.assertTrue(self.palette.exists())
 
         # Directory discovery must be identical for status and revert after uninstall.
         self.env['PATH'] = os.environ['PATH']
@@ -488,17 +476,17 @@ else:
         fallback.parent.mkdir()
         self.directory.rename(fallback)
         self.env['PATH'] = str(binaries)
-        self.assertEqual(self.theme('status').strip(), 'on')
+        self.assertEqual(self.theme('status').strip(), 'blocked')
         self.theme('revert')
         self.assertEqual((fallback / 'kitty.conf').read_text(), original)
-        self.assertFalse((fallback / 'sekaipop-colors.conf').exists())
+        self.assertTrue((fallback / 'sekaipop-colors.conf').exists())
         # Both UI/script revert and the public installer restore use the same fallback.
         self.env['PATH'] = os.environ['PATH']
         self.apply()
         self.env['PATH'] = str(binaries)
         self.install('--restore-kitty')
         self.assertEqual((fallback / 'kitty.conf').read_text(), original)
-        self.assertFalse((fallback / 'sekaipop-colors.conf').exists())
+        self.assertTrue((fallback / 'sekaipop-colors.conf').exists())
 
     def test_reload_respects_only_config_and_palette_overrides(self):
         proc = self.home / 'processes/123'
@@ -532,13 +520,13 @@ else:
         self.assertEqual(self.config.read_text(), 'font_size 11\ninclude ./sekaipop-colors.conf\n')
         self.assertTrue(self.palette.is_file())
 
-    def test_restore_cleans_up_an_owned_orphan(self):
+    def test_restore_retains_an_orphan_for_external_references(self):
         self.apply()
         self.config.unlink()
         self.theme('revert', '--dry-run')
         self.assertTrue(self.palette.is_file())
         self.theme('revert')
-        self.assertFalse(self.palette.exists())
+        self.assertTrue(self.palette.exists())
 
     def test_concurrent_enable_sync_and_restore(self):
         original = 'font_size 13\n'
@@ -559,7 +547,7 @@ else:
         self.assertEqual(self.config.read_text().count('include sekaipop-colors.conf\n'), 1)
         parallel(('sync', colours), ('revert', []), ('sync', colours))
         self.assertEqual(self.config.read_text(), original)
-        self.assertFalse(self.palette.exists())
+        self.assertTrue(self.palette.exists())
 
     def test_write_detects_an_edit_during_staging(self):
         helper = runpy.run_path(str(THEMING / 'kitty-theme.py'))
@@ -575,7 +563,7 @@ else:
 
         with mock.patch.object(tempfile, 'mkstemp', stage_then_save):
             with self.assertRaisesRegex(helper['Conflict'], 'changed during the operation'):
-                helper['write'](self.config, original, original + 'include sekaipop-colors.conf\n')
+                helper['File'](self.config).write(original + 'include sekaipop-colors.conf\n')
         self.assertEqual(self.config.read_text(), edited)
         self.assertEqual(list(self.directory.iterdir()), [self.config])
 
@@ -596,7 +584,7 @@ else:
 
         with mock.patch.object(tempfile, 'mkstemp', stage_then_retarget):
             with self.assertRaisesRegex(helper['Conflict'], 'changed during the operation'):
-                helper['write'](self.config, original, original + 'include sekaipop-colors.conf\n')
+                helper['File'](self.config).write(original + 'include sekaipop-colors.conf\n')
         self.assertEqual(self.config.resolve(), replacement)
         self.assertEqual(target.read_text(), original)
         self.assertEqual(replacement.read_text(), original)
@@ -608,7 +596,7 @@ else:
         self.assertTrue((directory / self.config.name).is_file())
         self.assertFalse(self.directory.exists())
         self.theme('revert')
-        self.assertFalse((directory / self.config.name).exists())
+        self.assertEqual((directory / self.config.name).read_text(), '')
 
     @unittest.skipIf(os.getuid() == 0, 'installer requires an unprivileged user')
     def test_installer_dry_run_repeat_and_restore(self):
@@ -669,11 +657,11 @@ else:
         self.install('--restore-kitty')
         self.install('--rice', rice)
         self.apply(action='sync')
-        self.assertFalse(self.config.exists())
-        self.assertFalse(self.palette.exists())
+        self.assertEqual(self.config.read_text(), '')
+        self.assertTrue(self.palette.exists())
         self.assertEqual(hypr_snapshot(), original_hypr)
         calls = (self.home / 'qs-calls').read_text().splitlines()
-        self.assertTrue(any(call.endswith(' ipc call apptheme syncKitty') for call in calls))
+        self.assertFalse(any(' ipc ' in call for call in calls))
         self.assertFalse(any(call.endswith(' list') or ' list -p ' in call for call in calls))
 
         self.assertIn('cannot be combined', self.install('--restore', success=False))
