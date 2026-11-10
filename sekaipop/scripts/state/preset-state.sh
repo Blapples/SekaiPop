@@ -12,13 +12,14 @@
 #                                       ".trash/<name><TAB><json>",
 #                                       ".trash/.notes<TAB><json>" and
 #                                       ".trash/.at<TAB><seconds>" (see below)
-#   preset-state.sh save <name> <json> [avatar|-] [banner|-] [frame file...]
-#                                       write (or replace) a preset; the two
+#   preset-state.sh save <name> <json> [avatar|-] [banner|-] [phone|-] [frame file...]
+#                                       write (or replace) a preset; the three
 #                                       optional paths are the pictures
-#                                       currently worn as avatar and banner
-#                                       ("-" = none), copied in next to it; the
-#                                       rest are the pictures the Custom Image
-#                                       frames show, copied into <name>.frames/
+#                                       currently worn as avatar, banner and
+#                                       the phone's wallpaper ("-" = none),
+#                                       copied in next to it; the rest are the
+#                                       pictures the Custom Image frames show,
+#                                       copied into <name>.frames/
 #   preset-state.sh restore-frames <name> <file>...
 #                                       put those frame pictures of a preset
 #                                       back in the Custom Image data folder
@@ -26,7 +27,8 @@
 #                                       print the full path of each one that
 #                                       is there afterwards
 #   preset-state.sh restore <name> <kind> <file> <as> [<kind> <file> <as>]...
-#                                       copy a preset's avatar / banner back
+#                                       copy a preset's avatar / banner / phone
+#                                       picture back
 #                                       into the data folder as <as>, the way
 #                                       pick-image.sh would have put it there,
 #                                       and print "<kind> <path>" for each
@@ -61,9 +63,9 @@
 # Copy the folder to take your presets to another machine; the wallpaper
 # paths inside are plain paths, so keep the pictures where they were.
 #
-# The avatar and banner are different: pick-image.sh throws the old picture
-# away whenever a new one is picked, so a preset keeps its OWN copy, in
-# <name>.images/avatar.<ext> and banner.<ext> beside <name>.json. Those travel
+# The avatar, banner and phone picture are different: pick-image.sh throws the old
+# picture away whenever a new one is picked, so a preset keeps its OWN copy, in
+# <name>.images/avatar.<ext>, banner.<ext> and phone.<ext> beside <name>.json. Those travel
 # with the folder. "restore" puts a copy back in the data folder
 # (${XDG_DATA_HOME:-~/.local/share}/sekaipop/, pick-image.sh's folder) and drops
 # the picture of that kind that was there, exactly like a fresh pick (including
@@ -121,12 +123,13 @@ keep_image() {
 }
 
 # keep_frames <folder> <the save command's own arguments>: copy the Custom Image
-# pictures that are listed after the avatar / banner into <folder> (built beside
+# pictures that are listed after the avatar / banner / phone into <folder> (built beside
 # it and swapped in; no pictures at all leaves no folder). Only the widget's own
 # copies (img-* in its data folder) are taken.
 keep_frames() {
     out="$1"
-    if [ $# -ge 6 ]; then shift 6; else set --; fi
+    # <folder>, then save, <name>, <json>, avatar, banner, phone.
+    if [ $# -ge 7 ]; then shift 7; else set --; fi
     src="${XDG_DATA_HOME:-$HOME/.local/share}/sekaipop/custom-images"
     rm -rf -- "$out.tmp"
     mkdir -p "$out.tmp" || return 1
@@ -199,6 +202,7 @@ case "$mode" in
         mkdir -p "$imgs.tmp" || exit 1
         keep_image avatar "${4:--}" "$imgs.tmp"
         keep_image banner "${5:--}" "$imgs.tmp"
+        keep_image phone "${6:--}" "$imgs.tmp"
         rm -rf -- "$imgs"
         if [ -n "$(ls -A "$imgs.tmp")" ]; then
             mv "$imgs.tmp" "$imgs"
@@ -245,7 +249,7 @@ case "$mode" in
             as="$3"
             shift 3
             case "$kind" in
-                avatar|banner) ;;
+                avatar|banner|phone) ;;
                 *) continue ;;
             esac
             # <file> is a plain name inside the preset's own folder.

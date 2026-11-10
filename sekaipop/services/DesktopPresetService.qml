@@ -69,13 +69,17 @@ import "../modules/common/functions/Framing.js" as FR
 //               back by `keepExact` so an older preset can't reset it; this part carries it. A preset
 //               saved before it existed has no `lock` part and leaves yours alone. (The Calendar's
 //               other options, lock.tone / lock.crop / lock.powerButtons, stay yours under every preset.)
-//   images      the avatar and banner (PanelImages.qml). pick-image.sh deletes
-//               the old picture whenever a new one is picked, so a preset
-//               keeps its OWN copy in <name>.images/ beside <name>.json
+//   images      the avatar, the banner and the phone's own picture (PanelImages.qml).
+//               pick-image.sh deletes the old picture whenever a new one is picked, so
+//               a preset keeps its OWN copy in <name>.images/ beside <name>.json
 //               (preset-state.sh). Wearing a preset puts the copy back as the
-//               avatar / banner. A preset saved with none wears "none" (the
-//               default picture comes back); a preset saved before this
-//               existed has no `images` part and leaves yours alone.
+//               avatar / banner / phone picture. A preset saved with no avatar or
+//               banner wears "none" (the default picture comes back); a preset saved
+//               before this existed has no `images` part and leaves yours alone.
+//               The phone's picture is only in the part when one was picked, and a
+//               part without it (no picture then, or a preset from before it was
+//               one, issue #147) leaves yours alone: whether the phone shows it is
+//               the `phone.wallpaper` setting, which every preset carries.
 //
 // What it never touches (so a preset from last month can't surprise you):
 //   keepExact / keepPrefix   24-hour time, weather unit and place, calendar
@@ -374,6 +378,9 @@ Singleton {
                 avatar: root.imageEntry("avatar", PanelImages.avatarPath),
                 banner: root.imageEntry("banner", PanelImages.bannerPath)
             }
+            // The phone's picture only when there is one (see the `images` part above).
+            if (PanelImages.phonePath !== "")
+                out.images.phone = root.imageEntry("phone", PanelImages.phonePath)
         }
 
         // Not before the saved pictures have been read back, or a preset saved
@@ -413,21 +420,25 @@ Singleton {
     // The same with parts left out, for presets saved before those were part of one
     // (they lack that part and must still get their tick): the avatar / banner, the
     // dock, the image frames (an older preset holds on / off for the pictures only), the
-    // phone's style and settings, the Overview's, and the lockscreen's style. Keyed by
-    // variantKey(); every mix of the six is here.
+    // phone's style and settings, the Overview's, the lockscreen's style, and the phone's
+    // picture inside the `images` part (a preset without one leaves yours alone, so it
+    // never mattered to it). Keyed by variantKey(); every mix of the seven is here, but
+    // "no phone picture" only beside an `images` part (without one it is the same thing).
     property var liveDigests: ({})
 
-    function variantKey(noImages, noDock, noFrames, noPhone, noOverview, noLock) {
+    function variantKey(noImages, noDock, noFrames, noPhone, noOverview, noLock, noPhonePicture) {
         return (noImages ? "i" : "-") + (noDock ? "d" : "-") + (noFrames ? "f" : "-")
             + (noPhone ? "p" : "-") + (noOverview ? "o" : "-") + (noLock ? "l" : "-")
+            + (noPhonePicture && !noImages ? "q" : "-")
     }
 
-    function refreshLive() {
-        const now = root.capture()
+    // Every variant of `now` (a capture()) as stable text, keyed by variantKey().
+    function digestsOf(now) {
         const out = {}
         const B = [false, true]
         for (const noImages of B) for (const noDock of B) for (const noFrames of B)
-        for (const noPhone of B) for (const noOverview of B) for (const noLock of B) {
+        for (const noPhone of B) for (const noOverview of B) for (const noLock of B)
+        for (const noPhonePicture of (noImages ? [false] : B)) {
             const rest = {}
             for (const k of Object.keys(now)) {
                 if ((noImages && k === "images") || (noDock && k === "dock")
@@ -440,10 +451,20 @@ Singleton {
                 rest.widgets = Object.assign({}, rest.widgets,
                     { images: { shown: rest.widgets.images.shown } })
             }
-            out[root.variantKey(noImages, noDock, noFrames, noPhone, noOverview, noLock)] = root.stable(rest)
+            if (noPhonePicture && rest.images && typeof rest.images === "object" && "phone" in rest.images) {
+                const pics = Object.assign({}, rest.images)
+                delete pics.phone
+                rest.images = pics
+            }
+            out[root.variantKey(noImages, noDock, noFrames, noPhone, noOverview, noLock, noPhonePicture)] = root.stable(rest)
         }
+        return out
+    }
+
+    function refreshLive() {
+        const out = root.digestsOf(root.capture())
         root.liveDigests = out
-        root.liveDigest = out[root.variantKey(false, false, false, false, false, false)]
+        root.liveDigest = out[root.variantKey(false, false, false, false, false, false, false)]
     }
 
     function digestOf(data) {
@@ -468,7 +489,8 @@ Singleton {
         const noPhone = data.phone === undefined
         const noOverview = data.overview === undefined
         const noLock = data.lock === undefined
-        const live = root.liveDigests[root.variantKey(noImages, noDock, noFrames, noPhone, noOverview, noLock)] ?? ""
+        const noPhonePicture = !noImages && !(data.images && typeof data.images === "object" && "phone" in data.images)
+        const live = root.liveDigests[root.variantKey(noImages, noDock, noFrames, noPhone, noOverview, noLock, noPhonePicture)] ?? ""
         return live !== "" && root.digestOf(data) === live
     }
 
@@ -574,15 +596,22 @@ Singleton {
         root.lastName = name
         // The sticky notes on the desktop become this preset's own.
         NotesService.adoptSet(name)
-        // The two paths are the pictures worn right now ("-" = none): the
-        // script copies them into the preset's own folder.
-        root.enqueue(["sh", root.script, "save", name, JSON.stringify(data),
-            data.images && PanelImages.avatarPath !== "" ? PanelImages.avatarPath : "-",
-            data.images && PanelImages.bannerPath !== "" ? PanelImages.bannerPath : "-"]
+        // The pictures worn right now (see wornPictures()): the script copies them into
+        // the preset's own folder...
+        root.enqueue(["sh", root.script, "save", name, JSON.stringify(data)]
+            .concat(root.wornPictures(data))
             // ...and the pictures the image frames show, copied beside it the same way.
             .concat(root.framePaths(data)))
         // The desktop is, by definition, what was just saved.
         root.refreshLive()
+    }
+
+    // preset-state.sh save's avatar, banner and phone arguments: the picture of each kind
+    // worn now, "-" for none, and all three "-" when `data` has no `images` part (captured
+    // before PanelImages had looked for them).
+    function wornPictures(data) {
+        return ["avatar", "banner", "phone"].map(kind =>
+            data && data.images && PanelImages.pathOf(kind) !== "" ? PanelImages.pathOf(kind) : "-")
     }
 
     function isFavorite(p) {
@@ -670,9 +699,8 @@ Singleton {
         if (undone === true)
             data._meta.undone = true
         root.previous = data
-        root.enqueue(["sh", root.script, "save", ".previous", JSON.stringify(data),
-            data.images && PanelImages.avatarPath !== "" ? PanelImages.avatarPath : "-",
-            data.images && PanelImages.bannerPath !== "" ? PanelImages.bannerPath : "-"]
+        root.enqueue(["sh", root.script, "save", ".previous", JSON.stringify(data)]
+            .concat(root.wornPictures(data))
             .concat(root.framePaths(data)))
     }
 
@@ -1145,7 +1173,7 @@ Singleton {
             PinnedAppsService.commit(PinnedAppsService.copy(items))
         }
 
-        // 5. Avatar and banner.
+        // 5. Avatar, banner and the phone's picture.
         root.wearImages(name, d.images)
 
         // 6. The Quick Panel's buttons.
@@ -1160,9 +1188,10 @@ Singleton {
         liveTimer.restart()
     }
 
-    // Puts a preset's avatar and banner on. `images` is the preset's `images`
-    // part: missing altogether (an older preset) = leave both alone; a kind
-    // that is null = that preset had none, so go back to the default picture;
+    // Puts a preset's avatar, banner and phone picture on. `images` is the preset's
+    // `images` part: missing altogether (an older preset) = leave them all alone; a
+    // kind it doesn't name (always the phone's when it had no picture) = leave that one
+    // alone; a kind that is null = that preset had none, so go back to the default picture;
     // otherwise copy the preset's own picture out into the data folder. A
     // picture the preset names that is already worn is not copied again, and
     // one whose copy has been deleted just stays as it is.
@@ -1170,11 +1199,11 @@ Singleton {
         if (!images || typeof images !== "object")
             return
         const args = []
-        for (const kind of ["avatar", "banner"]) {
+        for (const kind of ["avatar", "banner", "phone"]) {
             if (!(kind in images))
                 continue
             const img = images[kind]
-            const worn = kind === "avatar" ? PanelImages.avatarPath : PanelImages.bannerPath
+            const worn = PanelImages.pathOf(kind)
             if (img === null) {
                 if (worn !== "")
                     PanelImages.clear(kind)
