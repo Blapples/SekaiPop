@@ -75,7 +75,11 @@ EOF2
                 [ "$state" = "$pass" ] || continue
                 if [ "$state" = on ]; then
                     valid_on "$name" "$mode" "$x" "$y" "$scale" || { echo "bad spec: $spec" >&2; exit 2; }
-                    hyprctl eval "hl.monitor({ output = \"$name\", mode = \"$mode\", position = \"${x}x${y}\", scale = $scale })" >/dev/null 2>&1
+                    # `disabled = false` said outright: a rule without it leaves a screen
+                    # turned off earlier in the session off (Hyprland 0.56; issue #109), and
+                    # the countdown's revert, which re-applies the old screens, could not
+                    # bring one back either.
+                    hyprctl eval "hl.monitor({ output = \"$name\", mode = \"$mode\", position = \"${x}x${y}\", scale = $scale, disabled = false })" >/dev/null 2>&1
                 else
                     valid_name "$name" || { echo "bad spec: $spec" >&2; exit 2; }
                     hyprctl eval "hl.monitor({ output = \"$name\", disabled = true })" >/dev/null 2>&1

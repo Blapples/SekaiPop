@@ -4,6 +4,14 @@ The detailed notes written while SekaiPop was built: what each change touched, w
 and what was only read through, and how to check it. The short release notes are in
 `sekaipop/CHANGELOG.md`.
 
+## Unreleased — Displays: a screen turned off can be turned back on (issue #109)
+
+**Reproduced and checked on this desktop's two real monitors** (DP-3 1920x1080@180 and DP-2 2560x1080@75, Hyprland 0.56.2 with a Lua config), running `displays.sh apply` with the same specs the card sends. `main`: DP-2's scale changed 1 -> 1.25 -> 1 live, DP-2 turned off live, and turning it back on left it `disabled: true`; the same rule by hand with `disabled = false` brought it back. With the fix: scale 1.25, off, on, off, on, every step taking. A nested Hyprland was tried first and was not trustworthy (it seemed to keep the first rule for an output and ignore later ones, which the real session doesn't do), so nothing here rests on it. **Not seen:** the reporter's laptop, and what `monitors all` lists for a screen that `monitors.lua` disables from the start (the reporter's "Settings doesn't recognize it anymore" after a reboot); a screen turned off live is listed, so the card can find it.
+
+- `scripts/hyprland/displays.sh`: the `apply` rule for a screen that is on ends in `disabled = false`. This also fixes the countdown's revert, which re-applies the old screens through the same rule.
+- `tests/display-test/displays_script_test.js` (new; fails on `main`): the script against a fake `hyprctl` that writes down each Lua string. `display_unit.js` and `service_sim.js` pass.
+- docs/DISPLAYS.md (new) is the account.
+
 ## Unreleased — Presets: the phone's picture is part of a preset (issue #147)
 
 **Run on a live Quickshell 0.3.1 session** in a nested Hyprland 0.56.2 (the recipe in docs/DOCK-SMART-HIDE.md), the shell from this checkout with scratch XDG folders and a solid red picture as `phone-1000.png`. `ipc call presets save Red` wrote `Red.images/phone.png` and `"phone":{"file":"phone.png","from":"phone-1000.png"}`; with the picture swapped for a blue `phone-2000.png` and the shell restarted, `presets save Blue`, then `presets apply Red` left only `phone-1000.png` in the data folder (red), `presets apply Blue` only `phone-2000.png`, and `Red` again the red one. **Not seen on screen:** the phone would not open over ipc in the nested session and `grim` got no frame from it, so the picture on the phone after wearing a preset was read from the files, not looked at. Checked: `tests/preset-images-test/preset_images_unit.js` (the phone part, its tick and `preset-state.sh` save / restore run for real; fails on `main`, its unit part against `main`'s service and its script part against `main`'s script), and every other test gives the same result as `main` except two that now pass.
