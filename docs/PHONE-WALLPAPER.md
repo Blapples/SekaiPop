@@ -28,9 +28,13 @@ in one quiet line instead of staying blank. Issue [#41](https://github.com/Blapp
   once; then the Apps screen's old switch, `launcher.lcdWallpaper` (on by default), says
   it: on is Desktop, off is Off. So someone who had turned the Apps screen's wallpaper off
   keeps a plain phone.
-- Desktop presets carry the mode like any other setting. They don't carry the phone's
-  picture itself (the avatar and banner have a preset part of their own; this one
-  doesn't yet), so a preset set to "A picture" shows whatever picture you have.
+- Desktop presets carry the mode like any other setting, and the phone's picture itself
+  (issue [#147](https://github.com/Blapples/SekaiPop/issues/147)), as they carry the
+  avatar and banner: a copy, `phone.<ext>`, in the preset's `<name>.images/` folder, and
+  its framing. Wearing the preset puts that copy back as the phone's picture, even when
+  you have picked another since. A preset saved with no phone picture, or before presets
+  carried it, leaves yours alone (it is only ever shown in "A picture" mode, which the
+  preset's own setting decides), and its "you are wearing this one" tick ignores it.
 
 ## How it works
 
@@ -48,5 +52,12 @@ in one quiet line instead of staying blank. Issue [#41](https://github.com/Blapp
 - The empty notifications card picks one of a few lines (`emptyNote` in
   `QuickPanelFace.qml`) each time the list empties.
 
-Tests: `tests/phone-test/phone_wallpaper_test.js` (the rules, the wiring, the script) and
-`tests/launcher-test/lcd_source_test.js`.
+- Presets: `DesktopPresetService.qml` puts `images.phone` in a capture only when there
+  is a picture, hands the worn path to `preset-state.sh save` as its sixth argument
+  (`wornPictures()`), and `wearImages()` restores it with the avatar and banner. The
+  tick has one more variant (`noPhonePicture` in `variantKey()` / `digestsOf()`) so a
+  preset without the entry still matches.
+
+Tests: `tests/phone-test/phone_wallpaper_test.js` (the rules, the wiring, the script),
+`tests/launcher-test/lcd_source_test.js`, and `tests/preset-images-test/preset_images_unit.js`
+(the preset part, its tick, and `preset-state.sh` saving and restoring it for real).

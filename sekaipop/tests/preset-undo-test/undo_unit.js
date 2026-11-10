@@ -149,7 +149,7 @@ const make = (names, ctx) => {
 {
     const jobs = [], started = []
     const NotesService = { lookPart: () => ({ setName: "Day", shown: true, notes: [] }) }
-    const PanelImages = { avatarPath: "/d/avatar-1.png", bannerPath: "" }
+    const PanelImages = { avatarPath: "/d/avatar-1.png", bannerPath: "", phonePath: "/d/phone-2.png", pathOf(k) { return this[k + "Path"] || "" } }
     let current = false
     const root = {
         presets: [{ name: "Day", data: { theme: "day" } }], lastName: "Day", previous: null, script: "/s.sh",
@@ -157,7 +157,7 @@ const make = (names, ctx) => {
         capture: () => ({ theme: "now", images: {} }), framePaths: () => ["/f/img-1.png"],
         start: (d, n, b) => started.push([d, n, b])
     }
-    make(["find", "keepPrevious", "apply", "undoWear"], { root, NotesService, PanelImages })
+    make(["find", "keepPrevious", "apply", "undoWear", "wornPictures"], { root, NotesService, PanelImages })
 
     current = true; root.apply("Day")
     assert.strictEqual(jobs.length, 0, "wearing what is already worn keeps the undo there is")
@@ -165,7 +165,7 @@ const make = (names, ctx) => {
 
     current = false; root.apply("Day")
     assert.deepStrictEqual(jobs[0].slice(0, 4), ["sh", "/s.sh", "save", ".previous"])
-    assert.deepStrictEqual(jobs[0].slice(5), ["/d/avatar-1.png", "-", "/f/img-1.png"], "pictures and frames copied in")
+    assert.deepStrictEqual(jobs[0].slice(5), ["/d/avatar-1.png", "-", "/d/phone-2.png", "/f/img-1.png"], "pictures (avatar, banner, phone) and frames copied in")
     const saved = JSON.parse(jobs[0][4])
     assert.strictEqual(saved.theme, "now"); assert.strictEqual(saved._meta.last, "Day")
     assert.deepStrictEqual(saved._meta.notes, { setName: "Day", shown: true, notes: [] }, "the notes themselves are kept")

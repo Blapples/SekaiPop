@@ -43,7 +43,7 @@ const snapService = state => ({
 const TodoService = { posX: 1, posY: 2, posScale: 1, shown: true, size: "2x2", setShown(v) { this.shown = v }, setSize(v) { this.size = v }, setPosition(x, y, sc) { this.posX = x; this.posY = y; this.posScale = sc } }
 const NotesService = { shown: false, setShown(v) { this.shown = v } }
 const root = { script: "/s/preset-state.sh" }
-for (const n of ["stable", "digestOf", "isCurrent", "variantKey", "framePaths", "imagesPart", "baseName"])
+for (const n of ["stable", "digestOf", "isCurrent", "variantKey", "digestsOf", "framePaths", "imagesPart", "baseName"])
     root[n] = eval("(" + grab(svcSrc, n).replace(/root\./g, "root.") + ")")
 const PresetWidgets = {
     list: reg.load({
@@ -56,7 +56,7 @@ const PresetWidgets = {
         TodoService, NotesService, ImageService, DesktopPresetService: root
     })
 }
-const settings = { "quick.flat": false, "panel.hotEdge": true, "panel.hotDwell": 140, "panel.typeToSearch": true,
+const settings = { "quick.flat": false, "panel.hotEdge": true, "panel.hotDwell": 140, "panel.hotPeek": false, "panel.typeToSearch": true,
     "overview.style": "board", "overview.position": "center", "overview.workspaces": 5,
     "overview.layout": "", "overview.scale": 0, "overview.gap": -1, "lock.style": "gacha" }
 let applied = 0
@@ -102,21 +102,8 @@ assert.deepStrictEqual(ImageService.items, [A])
 ImageService.loaded = true
 
 // ---- the tick
-const keyOf = (ni, nd, nf, np, no, nl) => root.variantKey(ni, nd, nf, np, no, nl)
-function liveDigests(now) {
-    const out = {}
-    for (const ni of [false, true]) for (const nd of [false, true]) for (const nf of [false, true]) for (const np of [false, true]) for (const no of [false, true]) for (const nl of [false, true]) {
-        const r = Object.assign({}, now)
-        if (ni) delete r.images
-        if (nd) delete r.dock
-        if (np) delete r.phone
-        if (no) delete r.overview
-        if (nl) delete r.lock
-        if (nf && r.widgets) r.widgets = Object.assign({}, r.widgets, { images: { shown: r.widgets.images.shown } })
-        out[keyOf(ni, nd, nf, np, no, nl)] = root.stable(r)
-    }
-    return out
-}
+// refreshLive() without capture(): the service's own digestsOf()
+const liveDigests = now => root.digestsOf(now)
 // The service walks `all` (the list plus the desktop widget plugins); no plugins here.
 PresetWidgets.all = PresetWidgets.list
 const now = () => ({ theme: { g: "x" }, widgets: PP.capture(PresetWidgets.list) })
@@ -144,11 +131,11 @@ assert.strictEqual(root.isCurrent(noSize), true)
 
 // ---- the phone's style and settings
 const phoneKeys = () => Object.fromEntries(Object.entries(settings).filter(([k]) => !k.startsWith("overview.") && k !== "lock.style"))
-assert.deepStrictEqual(root.phonePart(), { flat: false, hotEdge: true, hotDwell: 140, typeToSearch: true })
-root.wearPhone({ flat: true, hotEdge: false, hotDwell: 5000, typeToSearch: false })
-assert.deepStrictEqual(phoneKeys(), { "quick.flat": true, "panel.hotEdge": false, "panel.hotDwell": 800, "panel.typeToSearch": false })  // delay clamped to 40..800
-root.wearPhone(undefined); root.wearPhone({ flat: "yes", hotDwell: "9" })                  // a preset without the part, or junk, changes nothing
-assert.deepStrictEqual(phoneKeys(), { "quick.flat": true, "panel.hotEdge": false, "panel.hotDwell": 800, "panel.typeToSearch": false })
+assert.deepStrictEqual(root.phonePart(), { flat: false, hotEdge: true, hotDwell: 140, hotPeek: false, typeToSearch: true })
+root.wearPhone({ flat: true, hotEdge: false, hotDwell: 5000, hotPeek: true, typeToSearch: false })
+assert.deepStrictEqual(phoneKeys(), { "quick.flat": true, "panel.hotEdge": false, "panel.hotDwell": 800, "panel.hotPeek": true, "panel.typeToSearch": false })  // delay clamped to 40..800
+root.wearPhone(undefined); root.wearPhone({ flat: "yes", hotDwell: "9", hotPeek: 1 })      // a preset without the part, or junk, changes nothing
+assert.deepStrictEqual(phoneKeys(), { "quick.flat": true, "panel.hotEdge": false, "panel.hotDwell": 800, "panel.hotPeek": true, "panel.typeToSearch": false })
 root.wearPhone({ hotDwell: 10 }); assert.strictEqual(settings["panel.hotDwell"], 40)
 const nowP = () => Object.assign(now(), { phone: root.phonePart() })
 root.liveDigests = liveDigests(nowP())
