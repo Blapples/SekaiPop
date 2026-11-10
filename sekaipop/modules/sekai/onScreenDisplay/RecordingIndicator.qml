@@ -16,7 +16,9 @@ Variants {
     id: root
 
     readonly property int gap: 14
-    readonly property var recorders: ["wf-recorder", "wl-screenrec", "gpu-screen-recorder"]
+    // Process names as pgrep -x sees them: the kernel keeps only the first 15 characters,
+    // so gpu-screen-recorder is "gpu-screen-reco".
+    readonly property var recorders: ["wf-recorder", "wl-screenrec", "gpu-screen-reco"]
 
     property bool external: false
     readonly property bool recording: RegionService.recording || root.external
