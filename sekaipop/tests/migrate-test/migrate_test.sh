@@ -24,7 +24,7 @@ printf 'hl.config({}) -- pjsekai:hypr:general.gaps_out\n' > "$C/hypr/pjsekai_ove
 printf 'load("pjsekai_overrides", true)\n' > "$C/hypr/hyprland.lua"
 printf 'hl.layer_rule({ match = { namespace = "^pjsekai-" } })\n' > "$C/hypr/hyprland/rules.lua"
 printf 'user = 1\n' > "$C/hypr.pjsekai-backup-20260101-000000/hyprland.conf"
-printf '# pjsekai: managed block, removed by Settings\ninclude pjsekai-colors.conf\nfont_size 12\n' > "$C/kitty/kitty.conf"
+printf '# pjsekai: managed block, removed by Settings -> Desktop -> App colours (revert)\ninclude pjsekai-colors.conf\nfont_size 12\n' > "$C/kitty/kitty.conf"
 printf '# Written by pjsekai\nforeground #fff\n' > "$C/kitty/pjsekai-colors.conf"
 printf "@import 'pjsekai-colors.css';\n" > "$C/gtk-3.0/gtk.css"
 printf '@define-color x #000;\n' > "$C/gtk-3.0/pjsekai-colors.css"
@@ -57,8 +57,8 @@ ck "hyprland.lua loads the new name" 'grep -q "sekaipop_overrides" "$C/hypr/hypr
 ck "layer rules follow the namespace" 'grep -q "\^sekaipop-" "$C/hypr/hyprland/rules.lua"'
 ck "hypr backups renamed for --restore" '[ -d "$C/hypr.sekaipop-backup-20260101-000000" ] && [ -d "$C/hypr.sekaipop-previous" ]'
 ck "backup content is left as it was" 'grep -q "user = 1" "$C/hypr.sekaipop-backup-20260101-000000/hyprland.conf"'
-ck "kitty block recognised again" 'grep -q "sekaipop: managed block" "$C/kitty/kitty.conf" && grep -q "include sekaipop-colors.conf" "$C/kitty/kitty.conf" && grep -q "font_size 12" "$C/kitty/kitty.conf"'
-ck "kitty colours file renamed" '[ -f "$C/kitty/sekaipop-colors.conf" ] && [ ! -e "$C/kitty/pjsekai-colors.conf" ]'
+ck "kitty config is left to the Kitty integration" 'grep -q "include pjsekai-colors.conf" "$C/kitty/kitty.conf" && grep -q "font_size 12" "$C/kitty/kitty.conf"'
+ck "kitty colours file keeps its existing name" '[ -f "$C/kitty/pjsekai-colors.conf" ] && [ ! -e "$C/kitty/sekaipop-colors.conf" ]'
 ck "gtk import and file renamed" 'grep -q "sekaipop-colors.css" "$C/gtk-3.0/gtk.css" && [ -f "$C/gtk-3.0/sekaipop-colors.css" ]'
 ck "fish prompt file renamed and rewritten" 'grep -q "__sekaipop_define_prompt" "$C/fish/conf.d/sekaipop-prompt.fish"'
 ck "VS Code block markers" 'grep -q "sekaipop:begin" "$C/Code/User/settings.json" && grep -q "editor.fontSize" "$C/Code/User/settings.json"'
@@ -73,8 +73,11 @@ ck "other programs folders are left alone" 'grep -q pjsekai "$C/unrelated/notes.
 ck "the log lists the rewrites" 'grep -q "rewrote" "$ST/sekaipop/migration.log"'
 
 # second run: nothing to do
+mkdir -p "$ST/sekaipop/kitty-backups"
+printf 'include pjsekai-colors.conf\n' > "$ST/sekaipop/kitty-backups/kitty.conf-test"
 sh "$S" > /tmp/mig-again.txt
 ck "second run does nothing" 'grep -q "nothing left" /tmp/mig-again.txt'
+ck "Kitty backups preserve the original bytes" 'grep -qx "include pjsekai-colors.conf" "$ST/sekaipop/kitty-backups/kitty.conf-test"'
 
 # both old and new exist (the new shell started first): old files are copied in, the old folder is kept aside
 mkdir -p "$C/pjsekai" && echo '{"theme":"old"}' > "$C/pjsekai/settings.json"
@@ -85,10 +88,11 @@ ck "merge: old folder kept aside, not deleted" 'ls -d "$C"/pjsekai.migrated-* >/
 sh "$S" > /tmp/mig-after.txt
 ck "kept-aside folder is not touched again" 'ls -d "$C"/pjsekai.migrated-* >/dev/null 2>&1 && ! ls -d "$C"/sekaipop.migrated-* >/dev/null 2>&1'
 
-# nothing in the repo (except this script, its test and the dev log) still says pjsekai
+# The old name survives only in compatibility code, fixtures and the dev log.
 repo="$here/../../.."
-left=$(grep -rIl -i pjsekai "$repo" --exclude-dir=.git --exclude=DEVLOG.md 2>/dev/null | sed "s#^$repo/##" | sort | tr '\n' ' ')
-ck "the old name only survives where it must: [$left]" '[ "$left" = "install.sh sekaipop/scripts/system/migrate-from-pjsekai.sh sekaipop/tests/migrate-test/migrate_test.sh " ] || [ "$left" = "install.sh sekaipop/scripts/system/migrate-from-pjsekai.sh sekaipop/tests/migrate-test/migrate_test.sh" ]'
+left=$(grep -rIl -i pjsekai "$repo" --exclude-dir=.git --exclude=DEVLOG.md 2>/dev/null | sed "s#^$repo/##" |
+    grep -vxE 'install\.sh|sekaipop/scripts/system/migrate-from-pjsekai\.sh|sekaipop/scripts/theming/kitty-theme\.py|sekaipop/tests/(kitty-theme-test/kitty_theme_test\.py|migrate-test/migrate_test\.sh)')
+ck "the old name only survives where it must: [$left]" '[ -z "$left" ]'
 
 echo "$checks checks, $fails failed"
 [ "$fails" = 0 ]

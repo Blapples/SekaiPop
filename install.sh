@@ -17,6 +17,9 @@
 #   --hypr MODE         full   = install the preconfigured Hyprland config (default for a new setup)
 #                       merge  = keep YOUR config, only add a small sekaipop_session file to it
 #                       skip   = do not touch Hyprland at all
+#   --kitty MODE        keep   = keep the current Kitty theme choice
+#                       enable = opt in to SekaiPop's Kitty colours after validation
+#   --restore-kitty     remove only SekaiPop's Kitty colour integration and exit
 #   --no-deps           do not install packages / services (only copy files)
 #   --with-tests        also copy the developer tests folder
 #   --restore           put back the Hyprland config that was backed up by the last run
@@ -27,17 +30,19 @@
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 
-REPLACED=0; DRY=0; YES=0; RICE=""; HYPR=auto; NODEPS=0; WITH_TESTS=0; RESTORE=0; DEPS_ARGS=()
+REPLACED=0; DRY=0; YES=0; RICE=""; HYPR=auto; KITTY=auto; NODEPS=0; WITH_TESTS=0; RESTORE=0; RESTORE_KITTY=0; DEPS_ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --dry-run) DRY=1 ;;
         --yes|-y) YES=1 ;;
         --rice) shift; RICE=${1:-} ;;
         --hypr) shift; HYPR=${1:-}; case "$HYPR" in full|merge|skip) ;; *) echo "--hypr needs full|merge|skip" >&2; exit 2 ;; esac ;;
+        --kitty) shift; KITTY=${1:-}; case "$KITTY" in keep|enable) ;; *) echo "--kitty needs keep|enable" >&2; exit 2 ;; esac ;;
+        --restore-kitty) RESTORE_KITTY=1 ;;
         --no-deps) NODEPS=1 ;;
         --with-tests) WITH_TESTS=1 ;;
         --restore) RESTORE=1 ;;
-        -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
         --) shift; DEPS_ARGS=("$@"); break ;;
         *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
@@ -101,11 +106,31 @@ hypr_running() { [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && have hyprctl && hy
 
 banner "SekaiPop installer" "Quickshell + Hyprland desktop"
 
+if [ "$RESTORE_KITTY" = 1 ]; then
+    step "Restoring Kitty colours"
+    KITTY_THEME="$HERE/sekaipop/scripts/theming/app-theme.sh"
+    if [ ! -f "$KITTY_THEME" ] || [ ! -f "$HERE/sekaipop/scripts/theming/kitty-theme.py" ]; then
+        echo "The bundled Kitty helper is missing. Run --restore-kitty from a complete current SekaiPop checkout." >&2
+        exit 1
+    fi
+    KITTY_FLAGS=()
+    [ "$DRY" = 1 ] && KITTY_FLAGS+=(--dry-run)
+    sh "$KITTY_THEME" revert kitty "${KITTY_FLAGS[@]}" || exit $?
+    exit 0
+fi
+
+if [ "$RESTORE" = 1 ] && [ "$HYPR" = skip ]; then
+    echo "--restore cannot be combined with --hypr skip." >&2
+    exit 2
+fi
+
 # Anything left from when SekaiPop was called pjsekai (settings, presets, app-colour blocks, the
-# Hyprland overrides file and backups) is moved to the new name first. Does nothing otherwise.
+# Hyprland overrides file and backups) is moved to the new name first, respecting --hypr skip.
 if [ -f "$HERE/sekaipop/scripts/system/migrate-from-pjsekai.sh" ]; then
-    if [ "$DRY" = 1 ]; then sh "$HERE/sekaipop/scripts/system/migrate-from-pjsekai.sh" --dry-run
-    else sh "$HERE/sekaipop/scripts/system/migrate-from-pjsekai.sh"; fi
+    MIGRATE_FLAGS=()
+    [ "$DRY" = 1 ] && MIGRATE_FLAGS+=(--dry-run)
+    [ "$HYPR" = skip ] && MIGRATE_FLAGS+=(--skip-hypr)
+    sh "$HERE/sekaipop/scripts/system/migrate-from-pjsekai.sh" "${MIGRATE_FLAGS[@]}"
 fi
 
 # ------------------------------------------------------------------ --restore
@@ -140,6 +165,7 @@ if [ -z "$RICE" ] || [ ! -f "$RICE/shell.qml" ]; then
     exit 1
 fi
 RICE=$(cd "$RICE" && pwd)
+FIRST_INSTALL=0; [ -f "$QS_DEST/shell.qml" ] || FIRST_INSTALL=1
 VERSION=$(cat "$RICE/VERSION" 2>/dev/null || echo unknown)
 ok "rice: $RICE ${D}(version $VERSION)${Z}"
 
@@ -233,6 +259,49 @@ if [ -n "$QTV" ] && ! ver_ge "$QTV" 6.12; then
     fi
 elif [ -n "$QTV" ]; then
     ok "Qt $QTV: the shipped shaders work as they are"
+fi
+
+# ------------------------------------------------------------------ optional Kitty colours
+step "Kitty colours"
+KITTY_THEME="$RICE/scripts/theming/app-theme.sh"
+if [ ! -f "$RICE/scripts/theming/kitty-theme.py" ]; then
+    if [ "$KITTY" = enable ]; then
+        fail "This rice does not include the Kitty configuration checker."
+    else
+        warn "This rice does not include the Kitty configuration checker."
+    fi
+else
+    # Detect the choice before asking. Only enable requests the helper's audit;
+    # unrelated errors must not prevent the prompt or a routine reinstall.
+    kitty_status=$(sh "$KITTY_THEME" status kitty) || kitty_status=conflict
+    if [ "$KITTY" = auto ] && [ "$FIRST_INSTALL" = 1 ] && [ "$kitty_status" = off ] &&
+        [ "$YES" = 0 ] && [ "$DRY" = 0 ] && [ -t 0 ]; then
+        read -r -p "  Enable SekaiPop's dynamic Kitty colours? [y/N] " answer
+        case "$answer" in y|Y|yes|YES) KITTY=enable ;; esac
+    fi
+    if [ "$KITTY" = enable ]; then
+        KITTY_FLAGS=()
+        [ "$DRY" = 1 ] && KITTY_FLAGS+=(--dry-run)
+        if sh "$KITTY_THEME" enable kitty "${KITTY_FLAGS[@]}"; then
+            if [ "$DRY" = 0 ]; then
+                ok "Kitty hook is ready; palette sync is not yet confirmed."
+                info "Start or restart SekaiPop with the same KITTY_CONFIG_DIRECTORY to supply the palette."
+            fi
+        else
+            fail "Kitty colour sync could not be enabled (see above)"
+        fi
+    else
+        info "Keeping the current Kitty colour choice."
+        case "$kitty_status" in
+            off|missing|on) ;;
+            pending) info "Kitty integration is waiting for the current palette; start or restart SekaiPop." ;;
+            blocked|conflict)
+                warn "Kitty integration needs review; no Kitty configuration was changed."
+                info "Inspect it with: sh \"$KITTY_THEME\" check kitty"
+                ;;
+            *) warn "Could not determine Kitty integration status; no Kitty configuration was changed." ;;
+        esac
+    fi
 fi
 
 # monitors.lua is made for THIS machine, never shipped: a file written for someone else's screens
@@ -368,6 +437,7 @@ fi
 # A shell that is already running keeps the old files: the folder it watches was moved
 # aside, and a reload inside the same process can fail on Qt state left from them
 # ("FaceKey is not a type", issue #79). So it is restarted, as a new process.
+# Skip mode leaves the restart to the user because startup can write Hyprland overrides.
 shell_running() { have qs && ! qs list -p "$QS_DEST" 2>/dev/null | grep -q "No running instances"; }
 restart_shell() {
     setsid -f sh "$QS_DEST/scripts/system/restart-shell.sh" "$QS_DEST" >/dev/null 2>&1 && ok "shell restarted on the new files"
@@ -382,7 +452,9 @@ if [ "$DRY" = 0 ] && [ "$HYPR" = full ] && hypr_running; then
             setsid -f qs -c sekaipop >/dev/null 2>&1 && ok "shell started"
         fi
     fi
-elif [ "$DRY" = 0 ] && [ "$REPLACED" = 1 ] && shell_running; then
+elif [ "$DRY" = 0 ] && [ "$HYPR" = skip ] && [ "$REPLACED" = 1 ]; then
+    warn "Restart SekaiPop to load the installed shell if it is already running."
+elif [ "$DRY" = 0 ] && [ "$HYPR" != skip ] && [ "$REPLACED" = 1 ] && shell_running; then
     printf '\n'
     ask "The shell is running on the old files. Restart it now?" && restart_shell
 fi

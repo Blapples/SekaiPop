@@ -230,6 +230,9 @@ It is read-only: it lists what is installed and what is missing, and changes not
 | `--hypr full` | Install the preconfigured Hyprland config (default on a new setup) |
 | `--hypr merge` | **Keep your config**, only add a small `sekaipop_session` file |
 | `--hypr skip` | Don't touch Hyprland at all |
+| `--kitty keep` | Keep the current Kitty theme choice and report problems with an existing integration |
+| `--kitty enable` | Opt in to SekaiPop's Kitty colours after validating the configuration |
+| `--restore-kitty` | Remove SekaiPop's Kitty integration and exit |
 | `--no-deps` | Only copy files, install no packages |
 | `--rice DIR` | Install a different copy of the `sekaipop` folder |
 | `--restore` | Put back the Hyprland config backed up by the last run |
@@ -253,6 +256,26 @@ It is read-only: it lists what is installed and what is missing, and changes not
 ### Updating
 
 Run the install command again. Settings and state live in `~/.local/state/sekaipop`, so your choices are kept. If you cloned the repo instead, `git pull` and run `./install.sh` again.
+
+### Kitty colours
+
+Colour sync requires **Kitty 0.47 or newer**. If Kitty cannot be checked safely, enabling and syncing are refused without changing your config or palette. Revert remains available, including after Kitty is uninstalled.
+
+Kitty sync is opt-in. Use `./install.sh --kitty enable`, **Settings → Desktop → App colours → kitty**, or `qs -c sekaipop ipc call apptheme apply kitty`. Repeat installs keep your choice. Kitty, Fish and Terminal prompt remain independent. For the low-level script, only `app-theme.sh enable kitty` can add the managed include; `apply kitty` and `sync kitty` only refresh an existing integration. This prevents an old in-memory shell's background `apply` from reversing a later revoke when it uses the updated helper.
+
+**Start or restart SekaiPop after `./install.sh --kitty enable` to supply the current palette.** To refresh an existing integration manually, use `qs -c sekaipop ipc call apptheme syncKitty`; this does not enable it.
+
+SekaiPop manages one exact marker/include pair and one generated palette. Before adding the include it uses the installed Kitty's parser to report invalid values, missing includes and duplicate references. It never disables third-party theme references for you. For an obsolete template containing `$term0`, review the reported location and fix or comment out that reference yourself. Once enabled, unrelated invalid options do not stop palette updates; valid later colour overrides still require review.
+
+Automatic management supports ordinary static includes and filename globs in a fixed directory, such as `themes/*.conf`. It refuses `envinclude`, `geninclude`, environment-variable include paths (except `KITTY_OS` and escaped literal dollars), recursive/parent-directory globs, glob directory wildcards, automatic Kitty theme files, and linked glob directories. These need manual configuration rather than an attempted simulation of every process's environment. Existing regular `kitty.conf` symlinks are supported. Dangling config links and linked palette files require manual adjustment. No generator is executed by the checker.
+
+**Revert detaches the managed include; it does not delete any config or palette file.** Use the Settings Revert button, `qs -c sekaipop ipc call apptheme revert kitty`, or `./install.sh --restore-kitty`. It works without Kitty installed, using Python 3. User edits, links, separators and retained palettes are left in place. Other explicit/glob/environment references to a retained palette remain user-managed and can still affect Kitty colours. A failed first enable may leave a generated palette without a hook; it is safe to retry. Revert does not restore backups over later user edits.
+
+Backups are kept under `${XDG_STATE_HOME:-~/.local/state}/sekaipop/kitty-backups/`. An unsigned old palette matching the complete historical format is backed up before adoption. This is a compatibility policy, not proof that nobody edited its colours: same-format manual edits are also backed up and replaced. Partial, unfamiliar or checksum-modified palettes are not overwritten. Known preview markers can still be detached, but their newline/target-creation metadata is no longer used to delete files or surrounding bytes.
+
+The hook is the only stored opt-in. Status is derived: `off` means no hook, `pending` means waiting for a palette, `on` means a verified static integration, `blocked` means an installed hook needs review, and `conflict` means even the hook could not be verified (`missing` means Kitty is absent with no hook). Operation failures are tracked separately in memory. Live reload covers windows using the same config directory, including `-o font_size=12`; explicit `--config` and palette overrides are left to their owner.
+
+The installer never sends Kitty mutation IPC to a possibly old shell or one with a different environment. It reports hook setup separately from colour application: start/restart SekaiPop with the same `KITTY_CONFIG_DIRECTORY` (and XDG configuration paths) to supply the palette. A custom `KITTY_CONFIG_DIRECTORY` must be absolute; `~/` uses that process's home directory. Visible SekaiPop instances targeting that directory are checked read-only with `qs list` and the `kittyProtocol` IPC method. Stop or restart an old runtime before mutations; updating its files alone does not update its in-memory service. Independent writers and shells in other runtime namespaces must be stopped manually. `--hypr skip` does not write Hyprland configuration or force a shell restart. Restore requires the helper shipped alongside the current installer, never an unknown installed version. `--dry-run` previews without changing files.
 
 ### Your own changes
 

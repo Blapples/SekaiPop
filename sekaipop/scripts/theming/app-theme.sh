@@ -5,7 +5,10 @@
 #
 #   app-theme.sh apply <target> key=#rrggbb ...   write the colours (and hook them in)
 #   app-theme.sh revert <target>                  remove everything `apply` added
-#   app-theme.sh status                           kitty=on|off|missing ... one per target
+#   app-theme.sh status                           one target=state per line
+# Kitty: on/blocked/pending have a verified hook; conflict does not.
+# Other states are off (no hook) and missing (Kitty absent and no hook).
+#   app-theme.sh check|enable|sync kitty           inspect, opt in, or refresh an existing Kitty hook
 #
 # Targets: kitty, foot, vscode, fuzzel, rofi, fish, prompt, hyprland.
 # Keys (all #rrggbb): bg fg cursor selbg selfg accent accent2 border surface
@@ -18,9 +21,9 @@
 # `sekaipop` comment). `revert` deletes that block and our file, nothing else.
 # A config file that doesn't exist yet is only created when the app is installed.
 #
-#   kitty   ~/.config/kitty/sekaipop-colors.conf, `include` at the END of kitty.conf
-#           (so it wins). Open kitty windows are recoloured by reloading the
-#           config (SIGUSR1, only for kitty >= 0.22, where it is understood).
+#   kitty   kitty-theme.py manages a single final include in Kitty's config and reloads
+#           open windows. Only `enable kitty` adds the include; apply/sync refresh it.
+#           Revert removes only the include and retains all config/palette files.
 #   foot    ~/.config/foot/sekaipop-colors.ini, `include=` at the TOP of foot.ini
 #           (foot only allows it there, so a [colors] section of your own further
 #           down still wins: remove it to let ours show). Foot never re-reads its
@@ -54,6 +57,38 @@ cfg="${XDG_CONFIG_HOME:-$HOME/.config}"
 here="$(cd "$(dirname "$0")" && pwd)"
 have() { command -v "$1" >/dev/null 2>&1; }
 MARK="# sekaipop: managed block, removed by Settings -> Desktop -> App colours (revert)"
+
+# Kitty uses its own headless option parser. Setting an explicit directory at launch
+# keeps even a read-only check from creating the default Kitty config directory.
+kitty_theme() {
+    if ! have kitty; then
+        # Revert only needs to remove our exact hook and inspect references. It must
+        # remain available after Kitty is removed, without Kitty's option parser.
+        if [ "$1" = revert ]; then python3 -B "$here/kitty-theme.py" "$@"; return $?; fi
+        if [ "$1" = status ]; then
+            kitty_state=$(python3 -B "$here/kitty-theme.py" "$@") || return 1
+            [ "$kitty_state" != off ] || kitty_state=missing
+            printf '%s\n' "$kitty_state"
+            return 0
+        fi
+        [ "$1" != sync ] || return 0
+        echo "Kitty is not installed; configuration validation is unavailable." >&2
+        return 3
+    fi
+    SEKAIPOP_KITTY_CONFIG_DIRECTORY="${KITTY_CONFIG_DIRECTORY-}" KITTY_CONFIG_DIRECTORY=/ \
+        kitty +runpy 'import runpy, sys; sys.dont_write_bytecode = True; runpy.run_path(sys.argv.pop(1), run_name="__main__")' \
+        "$here/kitty-theme.py" "$@"
+}
+
+# Only enable installs a hook; old background apply calls are refresh-only.
+if [ "${2-}" = kitty ]; then
+    cmd="$1"; shift 2
+    [ "$cmd" != apply ] || cmd=sync
+    case "$cmd" in
+        check|status|enable|apply|sync|revert) kitty_theme "$cmd" "$@"; exit $? ;;
+    esac
+fi
+kitty_status() { kitty_theme status || echo conflict; }
 
 # ===== arguments =====
 cmd="$1"; target="$2"
@@ -96,57 +131,6 @@ block_add_top() {
     else
         printf '%s\n%s\n' "$MARK" "$line" > "$f"
     fi
-}
-
-version_ge() { # version_ge "0.35.2" 0 22
-    v="$1"; maj="$2"; min="$3"
-    a=$(printf '%s' "$v" | cut -d. -f1); b=$(printf '%s' "$v" | cut -d. -f2)
-    [ -n "$a" ] && [ "$a" -gt "$maj" ] 2>/dev/null && return 0
-    [ "$a" = "$maj" ] && [ -n "$b" ] && [ "$b" -ge "$min" ] 2>/dev/null
-}
-
-# ===== kitty =====
-kitty_file="$cfg/kitty/sekaipop-colors.conf"
-kitty_conf="$cfg/kitty/kitty.conf"
-kitty_apply() {
-    have kitty || [ -d "$cfg/kitty" ] || { echo "kitty is not installed"; return 3; }
-    mkdir -p "$cfg/kitty" || return 1
-    {
-        echo "# Written by sekaipop (app-theme.sh). Do not edit: it is rewritten with the theme."
-        echo "foreground $col_fg"
-        echo "background $col_bg"
-        echo "selection_foreground $col_selfg"
-        echo "selection_background $col_selbg"
-        echo "cursor $col_cursor"
-        echo "cursor_text_color $col_bg"
-        echo "url_color $col_accent"
-        echo "active_border_color $col_accent"
-        echo "inactive_border_color $col_border"
-        echo "active_tab_foreground $col_bg"
-        echo "active_tab_background $col_accent"
-        echo "inactive_tab_foreground $col_fg"
-        echo "inactive_tab_background $col_surface"
-        echo "tab_bar_background $col_bg"
-        i=0
-        while [ $i -le 15 ]; do eval "echo color$i \$col_c$i"; i=$((i + 1)); done
-    } > "$kitty_file" || return 1
-    block_add_end "$kitty_conf" "include sekaipop-colors.conf" || return 1
-    # Open windows: kitty reloads its config on SIGUSR1 (kitty >= 0.22).
-    ver=$(kitty --version 2>/dev/null | awk '{ print $2 }')
-    if [ -n "$ver" ] && version_ge "$ver" 0 22; then pkill -USR1 -x kitty 2>/dev/null; fi
-    return 0
-}
-kitty_revert() {
-    block_remove "$kitty_conf"
-    rm -f "$kitty_file"
-    ver=$(kitty --version 2>/dev/null | awk '{ print $2 }')
-    if [ -n "$ver" ] && version_ge "$ver" 0 22; then pkill -USR1 -x kitty 2>/dev/null; fi
-    return 0
-}
-kitty_status() {
-    if grep -qF "sekaipop: managed block" "$kitty_conf" 2>/dev/null; then echo on
-    elif have kitty || [ -d "$cfg/kitty" ]; then echo off
-    else echo missing; fi
 }
 
 # ===== foot =====
@@ -580,7 +564,7 @@ case "$cmd" in
     apply)
         [ -n "$col_bg" ] && [ -n "$col_fg" ] && [ -n "$col_accent" ] || { echo "missing colours" >&2; exit 2; }
         case "$target" in
-            kitty) kitty_apply ;; foot) foot_apply ;; vscode) vscode_apply ;;
+            foot) foot_apply ;; vscode) vscode_apply ;;
             fuzzel) fuzzel_apply ;; rofi) rofi_apply ;; fish) fish_apply ;;
             prompt) prompt_apply ;; hyprland) hyprland_apply ;;
             *) echo "unknown target: $target" >&2; exit 2 ;;
@@ -589,7 +573,7 @@ case "$cmd" in
         ;;
     revert)
         case "$target" in
-            kitty) kitty_revert ;; foot) foot_revert ;; vscode) vscode_revert ;;
+            foot) foot_revert ;; vscode) vscode_revert ;;
             fuzzel) fuzzel_revert ;; rofi) rofi_revert ;; fish) fish_revert ;;
             prompt) prompt_revert ;; hyprland) hyprland_revert ;;
             *) echo "unknown target: $target" >&2; exit 2 ;;

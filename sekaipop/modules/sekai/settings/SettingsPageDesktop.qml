@@ -8,6 +8,7 @@ SettingsPage {
     id: page
 
     readonly property var src: host ? host.source : null
+    onVisibleChanged: if (visible) AppThemeService.refreshStatus()
 
     // The lockscreen wallpaper's name (no folder, no extension), for its tile.
     readonly property string lockName: {
@@ -1032,6 +1033,7 @@ SettingsPage {
             delegate: Item {
                 id: appRow
                 required property var modelData
+                readonly property string themeState: AppThemeService.stateOf(modelData.id)
                 width: parent ? parent.width : 600
                 height: 78
 
@@ -1039,21 +1041,21 @@ SettingsPage {
                     id: appToggle
                     icon: appRow.modelData.icon
                     label: appRow.modelData.label
-                    detail: AppThemeService.stateOf(appRow.modelData.id) === "not installed"
-                            ? "Not installed"
-                            : (appRow.modelData.id === "hyprland" && HyprlandSettings.isLua && !HyprlandSettings.linked
-                               ? "Live now; see the Hyprland page's one-time setup to keep it"
-                               : appRow.modelData.note)
-                    checked: SettingsService.flag("appTheme." + appRow.modelData.id)
-                    onToggled: AppThemeService.setEnabled(appRow.modelData.id,
-                        !SettingsService.flag("appTheme." + appRow.modelData.id))
+                    detail: appRow.themeState === "not installed" ? "Not installed"
+                            : appRow.themeState === "conflict" ? "Config needs review · see the shell log"
+                            : appRow.themeState === "pending" ? "Waiting for the current palette"
+                            : appRow.modelData.id === "hyprland" && HyprlandSettings.isLua && !HyprlandSettings.linked
+                              ? "Live now; see the Hyprland page's one-time setup to keep it"
+                              : appRow.modelData.note
+                    checked: AppThemeService.enabled(appRow.modelData.id)
+                    onToggled: AppThemeService.setEnabled(appRow.modelData.id, !checked)
                 }
 
                 SettingAction {
                     x: appToggle.width + 16
                     icon: "undo"
                     label: "Revert"
-                    detail: AppThemeService.stateOf(appRow.modelData.id) === "applied"
+                    detail: appRow.themeState === "applied" || appToggle.checked
                             ? "Take our colours off" : "Nothing applied"
                     onActivated: AppThemeService.revert(appRow.modelData.id)
                 }

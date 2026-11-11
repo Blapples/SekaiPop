@@ -254,7 +254,6 @@ Singleton {
         "matugen.pinA": "",
         "matugen.pinB": "",
         // ===== App colours =====
-        "appTheme.kitty": false,
         "appTheme.foot": false,
         "appTheme.vscode": false,
         "appTheme.fish": false,
