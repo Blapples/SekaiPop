@@ -95,6 +95,12 @@ Item {
     // The pick comes from the arrow keys (not the mouse): only then is one
     // tile picked out.
     property bool keyNav: false
+    // The grid's pick is shown (the cursor plate behind a tile) whenever it is what
+    // Enter would open: after the arrow keys moved it, and also while searching,
+    // where Enter opens the first match even before an arrow key is pressed. Not
+    // while a row above the grid (a system action, a command) or a card has Enter.
+    readonly property bool gridPickShown: (keyNav || searching) && drawerGrid.currentIndex >= 0
+        && extrasLayer.rowPick < 0 && !extrasLayer.cardShown
 
     // The grid used to come in each time the screen did: a quick rise and fade while
     // the phone was still sliding up under it. That is the expensive part of opening
@@ -567,6 +573,13 @@ Item {
             reuseItems: true
             pixelAligned: true
             delegate: tileDelegate
+            // The keyboard's cursor: ONE plate under the delegates that slides from tile
+            // to tile, so each arrow press shows where the pick went. Hover does not
+            // bring it (a hovered icon only grows), so mouse and keys never both look
+            // picked.
+            highlight: pickPlate
+            highlightFollowsCurrentItem: true
+            highlightMoveDuration: 90
             bottomMargin: Math.max(0, face.gridBottom - face.visibleBottom + 24)
 
             SekaiScrollBar {}
@@ -616,6 +629,42 @@ Item {
         onColorPicked: hex => face.colorPickedBack(hex)
     }
 
+    // ===== the keyboard's cursor =====
+    // The same language as the extras' picked rows (LauncherExtras.qml): mint, a thick
+    // outline and the phone's hard shadow, so a pick reads the same in a row and in
+    // the grid, over the plain screen and over the wallpaper.
+    Component {
+        id: pickPlate
+
+        Item {
+            width: face.cellW
+            height: face.cellH
+            visible: face.gridPickShown
+
+            Rectangle {
+                x: 10
+                y: 8
+                width: parent.width - 16
+                height: parent.height - 12
+                radius: 26
+                color: mt.pLineShadow
+                antialiasing: true
+            }
+
+            Rectangle {
+                x: 6
+                y: 4
+                width: parent.width - 16
+                height: parent.height - 12
+                radius: 26
+                color: mt.accentMint
+                border.width: 4
+                border.color: mt.pLine
+                antialiasing: true
+            }
+        }
+    }
+
     // ===== one tile: the app's icon with the name under it =====
     // No button any more: no white cap, outline, ring, shadow or mint-to-cyan lit look,
     // and no chip behind the name. Just the icon and the name straight on the screen.
@@ -630,7 +679,7 @@ Item {
             required property var modelData
             required property int index
 
-            readonly property bool picked: face.keyNav && GridView.isCurrentItem
+            readonly property bool picked: face.gridPickShown && GridView.isCurrentItem
             readonly property bool lit: (area.containsMouse && !drawerWheel.gliding && !drawerGrid.moving) || picked
 
             // 0 = the resting look, 1 = the lit look; glides between them. Every frame
@@ -712,8 +761,9 @@ Item {
                 text: tile.modelData.name
                 // Over the wallpaper there is no chip to read on any more, so the name
                 // goes white with a thin dark edge; on the plain screen it is the usual ink.
-                color: face.lcdOn ? "#ffffff" : mt.pInk
-                style: face.lcdOn ? Text.Outline : Text.Normal
+                // On the cursor plate it is the dark ink the mint keys use, wallpaper or not.
+                color: tile.picked ? mt.colBorder : (face.lcdOn ? "#ffffff" : mt.pInk)
+                style: face.lcdOn && !tile.picked ? Text.Outline : Text.Normal
                 styleColor: Qt.rgba(0.10, 0.10, 0.22, 0.85)
                 font.family: mt.fontFamily
                 font.pixelSize: 18
