@@ -673,7 +673,7 @@ SettingsPage {
             label: "Dock on every monitor"
             detail: SettingsService.flag("dock.perMonitor")
                 ? "One dock per monitor · apps on that monitor"
-                : "One dock, on the first monitor"
+                : "One dock, on " + (SettingsService.get("dock.screen") || "the first monitor")
             checked: SettingsService.flag("dock.perMonitor")
             onToggled: SettingsService.toggle("dock.perMonitor")
         }
