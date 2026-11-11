@@ -230,7 +230,7 @@ It is read-only: it lists what is installed and what is missing, and changes not
 | `--hypr full` | Install the preconfigured Hyprland config (default on a new setup) |
 | `--hypr merge` | **Keep your config**, only add a small `sekaipop_session` file |
 | `--hypr skip` | Don't touch Hyprland at all |
-| `--kitty keep` | Keep the current Kitty theme choice and report configuration issues |
+| `--kitty keep` | Keep the current Kitty theme choice and report problems with an existing integration |
 | `--kitty enable` | Opt in to SekaiPop's Kitty colours after validating the configuration |
 | `--restore-kitty` | Remove SekaiPop's Kitty integration and exit |
 | `--no-deps` | Only copy files, install no packages |
@@ -259,7 +259,11 @@ Run the install command again. Settings and state live in `~/.local/state/sekaip
 
 ### Kitty colours
 
+Colour sync requires **Kitty 0.47 or newer**. If Kitty cannot be checked safely, enabling and syncing are refused without changing your config or palette. Revert remains available, including after Kitty is uninstalled.
+
 Kitty sync is opt-in. Use `./install.sh --kitty enable`, **Settings → Desktop → App colours → kitty**, or `qs -c sekaipop ipc call apptheme apply kitty`. Repeat installs keep your choice. Kitty, Fish and Terminal prompt remain independent. For the low-level script, only `app-theme.sh enable kitty` can add the managed include; `apply kitty` and `sync kitty` only refresh an existing integration. This prevents an old in-memory shell's background `apply` from reversing a later revoke when it uses the updated helper.
+
+**Start or restart SekaiPop after `./install.sh --kitty enable` to supply the current palette.** To refresh an existing integration manually, use `qs -c sekaipop ipc call apptheme syncKitty`; this does not enable it.
 
 SekaiPop manages one exact marker/include pair and one generated palette. Before adding the include it uses the installed Kitty's parser to report invalid values, missing includes and duplicate references. It never disables third-party theme references for you. For an obsolete template containing `$term0`, review the reported location and fix or comment out that reference yourself. Once enabled, unrelated invalid options do not stop palette updates; valid later colour overrides still require review.
 

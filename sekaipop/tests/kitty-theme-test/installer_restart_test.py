@@ -1,6 +1,7 @@
 """Exercise installer boundaries without mutating a running Quickshell's environment."""
 
 import os
+import pty
 import shutil
 import subprocess
 import tempfile
@@ -22,6 +23,7 @@ class InstallerRestartTest(unittest.TestCase):
             self.env[f'XDG_{kind}_HOME'] = str(self.home / kind.lower())
         self.env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
         self.env.pop('KITTY_CONFIG_DIRECTORY', None)
+        self.env.pop('XDG_CONFIG_DIRS', None)
         self.installer = self.home / 'source/install.sh'
         self.installer.parent.mkdir()
         shutil.copy(REPO / 'install.sh', self.installer)
@@ -31,7 +33,10 @@ class InstallerRestartTest(unittest.TestCase):
         self.write(self.rice / 'VERSION', 'test\n')
         self.write(self.rice / 'scripts/theming/kitty-theme.py', '# fixture\n')
         self.write(self.rice / 'scripts/theming/app-theme.sh',
-                   '#!/bin/sh\n[ "$1" != status ] || echo off\nexit 0\n')
+                   '#!/bin/sh\nprintf "%s\\n" "$*" >> "$HOME/theme-calls"\n'
+                   'case "$1" in status) echo "${TEST_KITTY_STATUS:-off}" ;; '
+                   'check|enable) if [ "${TEST_AUDIT_FAIL:-0}" = 1 ]; then '
+                   'echo "Kitty: kitty.conf:1: background \\$term0 is not a valid colour" >&2; exit 1; fi ;; esac\n')
         self.hypr = self.write(self.home / 'config/hypr/hyprland.conf', '# user config\n')
         binaries = self.home / 'bin'
         self.write(binaries / 'qs', '#!/bin/sh\nprintf "%s\\n" "$*" >> "$HOME/qs-calls"\n'
@@ -59,6 +64,120 @@ class InstallerRestartTest(unittest.TestCase):
         self.assertEqual(self.hypr.read_text(), '# user config\n')
         self.assertFalse((self.home / 'restarts').exists())
         return output
+
+    def install_tty(self, *options, answer='n', success=True):
+        # stdin is a real PTY: this exercises [ -t 0 ] without --yes.
+        master, slave = pty.openpty()
+        try:
+            with subprocess.Popen(['bash', str(self.installer), '--hypr', 'skip', '--no-deps',
+                                   '--rice', str(self.rice), *options], env=self.env,
+                                  stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                  text=True) as process:
+                os.write(master, (answer + '\n').encode())
+                try:
+                    output, _ = process.communicate(timeout=15)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    output, _ = process.communicate()
+                    self.fail('Installer did not finish after TTY input:\n' + output)
+                self.assertEqual(process.returncode == 0, success, output)
+        finally:
+            os.close(master)
+            os.close(slave)
+        self.assertEqual(self.hypr.read_text(), '# user config\n')
+        self.assertFalse((self.home / 'restarts').exists())
+        return output
+
+    def real_helper(self):
+        for name in ('app-theme.sh', 'kitty-theme.py'):
+            shutil.copy(REPO / 'sekaipop/scripts/theming' / name,
+                        self.rice / 'scripts/theming' / name)
+
+    def calls(self):
+        return (self.home / 'theme-calls').read_text().splitlines()
+
+    def test_default_and_keep_only_detect_state(self):
+        for options in ((), ('--kitty', 'keep'), ('--dry-run',)):
+            with self.subTest(options=options):
+                output = self.install(*options)
+                self.assertIn('Keeping the current Kitty colour choice', output)
+                self.assertFalse((self.home / 'config/kitty').exists())
+                self.assertTrue(all(call == 'status kitty' for call in self.calls()), self.calls())
+
+    def test_no_kitty_default_install_has_no_audit_warning(self):
+        self.real_helper()
+        binaries = self.home / 'bin'
+        for name in ('bash', 'sh', 'python3', 'dirname', 'id', 'date', 'tput', 'cat',
+                     'grep', 'head', 'awk', 'mkdir', 'cp', 'rm', 'sort', 'diff', 'realpath'):
+            (binaries / name).symlink_to(shutil.which(name))
+        self.env['PATH'] = str(binaries)
+        self.assertIsNone(shutil.which('kitty', path=self.env['PATH']))
+        output = self.install_tty(answer='y')
+        self.assertIn('Keeping the current Kitty colour choice', output)
+        self.assertNotIn('configuration validation is unavailable', output)
+        self.assertNotIn("Enable SekaiPop's dynamic Kitty colours?", output)
+        self.assertFalse((self.home / 'config/kitty').exists())
+
+    @unittest.skipUnless(shutil.which('kitty'), 'requires the Kitty executable')
+    def test_real_kitty_default_install_does_not_audit_empty_config(self):
+        self.real_helper()
+        output = self.install()
+        self.assertNotIn('Kitty config:', output)
+        self.assertIn('Keeping the current Kitty colour choice', output)
+        self.assertFalse((self.home / 'config/kitty').exists())
+
+    def test_kept_states_are_not_assumed_safe_or_strictly_reaudited(self):
+        config = self.write(self.home / 'config/kitty/kitty.conf', '# untouched\n')
+        for state in ('off', 'missing', 'on', 'pending', 'blocked', 'conflict'):
+            with self.subTest(state=state):
+                self.env['TEST_KITTY_STATUS'] = state
+                output = self.install('--kitty', 'keep')
+                self.assertTrue(all(call == 'status kitty' for call in self.calls()), self.calls())
+                self.assertEqual(config.read_text(), '# untouched\n')
+                self.assertNotIn('Kitty hook is ready', output)
+                if state in ('blocked', 'conflict'):
+                    self.assertIn('needs review', output)
+                if state == 'pending':
+                    self.assertIn('waiting for the current palette', output)
+
+    def test_interactive_refusal_precedes_invalid_config_audit(self):
+        self.env['TEST_AUDIT_FAIL'] = '1'
+        config = self.write(self.home / 'config/kitty/kitty.conf', 'background $term0\n')
+        output = self.install_tty(answer='n')
+        self.assertIn("Enable SekaiPop's dynamic Kitty colours?", output)
+        self.assertEqual(self.calls(), ['status kitty'])
+        self.assertNotIn('not a valid colour', output)
+        self.assertEqual(config.read_text(), 'background $term0\n')
+        self.assertFalse((config.parent / 'sekaipop-colors.conf').exists())
+
+    def test_interactive_consent_then_failed_audit_does_not_install_hook(self):
+        self.env['TEST_AUDIT_FAIL'] = '1'
+        config = self.write(self.home / 'config/kitty/kitty.conf', 'background $term0\n')
+        output = self.install_tty(answer='y', success=False)
+        self.assertLess(output.index("Enable SekaiPop's dynamic Kitty colours?"),
+                        output.index('not a valid colour'))
+        self.assertIn('Kitty colour sync could not be enabled', output)
+        self.assertEqual(self.calls(), ['status kitty', 'enable kitty'])
+        self.assertEqual(config.read_text(), 'background $term0\n')
+        self.assertFalse((config.parent / 'sekaipop-colors.conf').exists())
+
+    def test_keep_yes_and_dry_run_do_not_implicitly_opt_in_at_a_tty(self):
+        for options in (('--dry-run',), ('--yes',), ('--kitty', 'keep')):
+            with self.subTest(options=options):
+                output = self.install_tty(*options, answer='y')
+                self.assertNotIn("Enable SekaiPop's dynamic Kitty colours?", output)
+                self.assertTrue(all(call == 'status kitty' for call in self.calls()), self.calls())
+                self.assertFalse((self.home / 'config/kitty').exists())
+
+    @unittest.skipUnless(shutil.which('kitty'), 'requires the Kitty executable')
+    def test_real_kitty_invalid_template_is_audited_after_tty_consent(self):
+        self.real_helper()
+        config = self.write(self.home / 'config/kitty/kitty.conf', 'background $term0\n')
+        output = self.install_tty(answer='y', success=False)
+        self.assertLess(output.index("Enable SekaiPop's dynamic Kitty colours?"), output.index('$term0'))
+        self.assertIn('Kitty colour sync could not be enabled', output)
+        self.assertEqual(config.read_text(), 'background $term0\n')
+        self.assertFalse((config.parent / 'sekaipop-colors.conf').exists())
 
     def test_skip_upgrade_explains_restart_requirement(self):
         self.write(self.installed / 'shell.qml', '// old shell\n')
@@ -126,6 +245,9 @@ class InstallerRestartTest(unittest.TestCase):
             output.write('some_future_option 1\n')
         snapshot = {p: (p.read_bytes(), p.stat().st_mtime_ns)
                     for p in config.parent.rglob('*') if p.is_file()}
+        kept = self.install('--kitty', 'keep')
+        self.assertNotIn('unknown config key', kept)
+        self.assertNotIn('Kitty config:', kept)
         repeated = subprocess.run(['sh', str(helper), 'enable', 'kitty', '--dry-run'],
                                   env=self.env, capture_output=True, text=True, timeout=10)
         self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)

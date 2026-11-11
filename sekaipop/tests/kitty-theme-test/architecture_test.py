@@ -1,14 +1,21 @@
 """Regression tests for the integration's deliberately narrow ownership boundary."""
 
 import json
+import io
 import os
+import re
 import runpy
 import shutil
 import subprocess
+import sys
 import tempfile
+import traceback
 import unittest
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from hashlib import sha256
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from unittest import mock
 
 
 REPO = Path(__file__).resolve().parents[3]
@@ -211,6 +218,184 @@ except h['Conflict']:
         self.theme('revert')
         self.assertEqual(self.theme('status').stdout.strip(), 'off')
         self.assertEqual(self.palette.read_bytes(), before[1])
+
+
+class KittyApiTest(unittest.TestCase):
+    """Representative private API signatures; runs with Python alone, without Kitty."""
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name)
+        self.directory = self.home / 'config/kitty'
+        self.directory.mkdir(parents=True)
+        self.config = self.directory / 'kitty.conf'
+        self.palette = self.directory / 'sekaipop-colors.conf'
+        self.config.write_text('font_size 13\n')
+        helper = runpy.run_path(str(HELPER))
+        self.palette.write_text(helper['managed_palette'](self.palette, 'background #112233\n'))
+        self.env = {'HOME': str(self.home), 'PATH': '', 'XDG_CONFIG_HOME': str(self.home / 'config'),
+                    'XDG_STATE_HOME': str(self.home / 'state')}
+        self.calls = []
+        self.conf = ModuleType('kitty.conf.utils')
+        self.conf.parse_line = lambda *args: None
+        self.conf.key_pat = re.compile(r'(\S+)\s+(.+)')
+        self.conf.NamedLineIterator = lambda name, lines: lines
+        self.conf.currently_parsing = SimpleNamespace(file='', number=1)
+
+        @contextmanager
+        def set_file(name):
+            previous = self.conf.currently_parsing.file
+            self.conf.currently_parsing.file = name
+            try:
+                yield
+            finally:
+                self.conf.currently_parsing.file = previous
+
+        self.conf.currently_parsing.set_file = set_file
+        self.log_error = lambda message: None
+        self.modules = {
+            'kitty': ModuleType('kitty'),
+            'kitty.conf': SimpleNamespace(utils=self.conf),
+            'kitty.options.parse': SimpleNamespace(create_result_dict=dict, parse_conf_item=lambda *args: True),
+            'kitty.utils': SimpleNamespace(expandvars=lambda value, env: value, log_error=self.log_error),
+        }
+
+    def old_parser(self, lines, item, options, bad=None, effective_config_lines=None):
+        self.calls.append('old parser must not run')
+
+    def current_parser(self, lines, item, options, bad=None, effective_config_lines=None, allow_geninclude=True):
+        self.calls.append(allow_geninclude)
+        for line in lines:
+            self.conf.parse_line(line, item, options, str(self.directory))
+
+    def installed(self):
+        self.config.write_text('font_size 13\n# sekaipop: kitty colours\ninclude sekaipop-colors.conf\n')
+
+    def snapshot(self):
+        return {str(p.relative_to(self.home)): p.read_bytes() for p in self.home.rglob('*') if p.is_file()}
+
+    def invoke(self, action, parser, *extra):
+        self.conf.parse_config_base = parser
+        output, error = io.StringIO(), io.StringIO()
+        code = 0
+        # Run the actual command entry point and render uncaught exceptions as the
+        # Python CLI would. None of these fixtures import or launch installed Kitty.
+        with mock.patch.dict(sys.modules, self.modules), mock.patch.dict(os.environ, self.env, clear=True), \
+                mock.patch.object(sys, 'argv', [str(HELPER), action, *extra]), \
+                redirect_stdout(output), redirect_stderr(error):
+            try:
+                runpy.run_path(str(HELPER), run_name='__main__')
+            except SystemExit as exc:
+                code = exc.code
+            except Exception:
+                code = 1
+                traceback.print_exc()
+        return code, output.getvalue(), error.getvalue()
+
+    def test_old_api_refuses_check_and_enable_without_writes_or_traceback(self):
+        before = self.snapshot()
+        for action, extra in (('check', ()), ('enable', ()), ('enable', ('--dry-run',))):
+            with self.subTest(action=action, extra=extra):
+                code, _, error = self.invoke(action, self.old_parser, *extra)
+                self.assertEqual(code, 1)
+                self.assertNotIn('Traceback', error)
+                self.assertIn('Kitty 0.47', error)
+                self.assertEqual(self.snapshot(), before)
+                self.assertEqual(self.calls, [])
+
+    def test_old_api_installed_hook_is_blocked_and_sync_is_refused(self):
+        self.installed()
+        before = self.snapshot()
+        for action in ('status', 'sync'):
+            with self.subTest(action=action):
+                code, output, error = self.invoke(action, self.old_parser, *(f'{k}=#445566' for k in COLOURS))
+                self.assertEqual(code, 0 if action == 'status' else 1)
+                if action == 'status':
+                    self.assertEqual(output.strip(), 'blocked')
+                self.assertIn('Kitty 0.47', error)
+                self.assertNotIn('Traceback', error)
+                self.assertEqual(self.snapshot(), before)
+
+    def test_supported_api_keeps_generator_execution_disabled(self):
+        before = self.snapshot()
+        code, _, error = self.invoke('check', self.current_parser)
+        self.assertEqual((code, error), (0, ''))
+        self.assertTrue(self.calls)
+        self.assertEqual(set(self.calls), {False})
+        self.assertEqual(self.snapshot(), before)
+
+    def test_uninspectable_parser_is_reported_as_incompatible(self):
+        self.installed()
+        before = self.snapshot()
+        code, output, error = self.invoke('status', min)
+        self.assertEqual((code, output.strip()), (0, 'blocked'))
+        self.assertIn('cannot inspect configuration parser signature', error)
+        self.assertNotIn('Traceback', error)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_future_signature_error_restores_temporary_parser_changes(self):
+        def future_parser(lines, item, options, bad, *, required_new_argument, allow_geninclude=True):
+            raise AssertionError('signature should reject our call')
+
+        self.installed()
+        before = self.snapshot()
+        original_line = self.conf.parse_line
+        for existing in (False, True):
+            with self.subTest(existing=existing):
+                if existing:
+                    self.conf.open = original_line
+                    self.log_error.redirect = original_line
+                code, output, error = self.invoke('status', future_parser)
+                self.assertEqual((code, output.strip()), (0, 'blocked'))
+                self.assertIn('incompatible', error)
+                self.assertNotIn('Traceback', error)
+                self.assertIs(self.conf.parse_line, original_line)
+                for owner, name in ((self.conf, 'open'), (self.log_error, 'redirect')):
+                    self.assertEqual(hasattr(owner, name), existing)
+                    if existing:
+                        self.assertIs(getattr(owner, name), original_line)
+                self.assertEqual(self.snapshot(), before)
+                code, _, error = self.invoke('check', self.current_parser)
+                self.assertEqual((code, error), (0, ''))
+
+    def test_collected_api_type_error_cannot_be_ignored_by_sync(self):
+        def collecting_parser(lines, item, options, bad, effective_config_lines=None, allow_geninclude=True):
+            self.current_parser(lines, item, options, bad, effective_config_lines, allow_geninclude)
+            bad.append(SimpleNamespace(exception=TypeError('future parse_line signature'),
+                                       file=str(self.config), number=1, line='font_size 13'))
+
+        self.installed()
+        before = self.snapshot()
+        for action in ('status', 'sync'):
+            with self.subTest(action=action):
+                code, output, error = self.invoke(action, collecting_parser, *(f'{k}=#445566' for k in COLOURS))
+                self.assertEqual(code, 0 if action == 'status' else 1)
+                if action == 'status':
+                    self.assertEqual(output.strip(), 'blocked')
+                self.assertIn('incompatible', error)
+                self.assertNotIn('Traceback', error)
+                self.assertEqual(self.snapshot(), before)
+
+    def test_no_hook_status_and_sync_do_not_require_parser_compatibility(self):
+        for action in ('status', 'sync'):
+            code, output, error = self.invoke(action, self.old_parser)
+            self.assertEqual((code, error), (0, ''))
+            if action == 'status':
+                self.assertEqual(output.strip(), 'off')
+        self.assertEqual(self.calls, [])
+
+    def test_revert_does_not_require_a_supported_or_installed_kitty(self):
+        previous = self.palette.read_bytes()
+        for missing in (False, True):
+            with self.subTest(missing=missing):
+                self.installed()
+                if missing:
+                    self.modules['kitty.conf'] = None
+                code, _, error = self.invoke('revert', self.old_parser)
+                self.assertEqual((code, error), (0, ''))
+                self.assertEqual(self.config.read_text(), 'font_size 13\n')
+                self.assertEqual(self.palette.read_bytes(), previous)
+                self.assertEqual(self.calls, [])
 
 
 if __name__ == '__main__':

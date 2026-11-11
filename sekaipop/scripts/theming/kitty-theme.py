@@ -13,6 +13,7 @@ import sys
 import tempfile
 from fnmatch import fnmatchcase
 from hashlib import sha256
+from inspect import signature
 from pathlib import Path
 
 
@@ -30,10 +31,15 @@ LEGACY_MARK = '# {}: managed block, removed by Settings -> Desktop -> App colour
 HEADER = '# Written by {} (app-theme.sh). Do not edit: it is rewritten with the theme.'
 PALETTE_NAME = 'sekaipop-colors.conf'
 SYSTEM_CONF = Path('/etc/xdg/kitty/kitty.conf')
+API_REQUIREMENT = 'Kitty colour integration needs Kitty 0.47 or newer with a compatible configuration parser'
 
 
 class Conflict(Exception):
     pass
+
+
+def error_message(error):
+    return f'{API_REQUIREMENT} (incompatible API: {error})' if isinstance(error, TypeError) else str(error)
 
 
 def digest(text):
@@ -73,11 +79,20 @@ class Audit:
         from kitty.options.parse import create_result_dict, parse_conf_item
         from kitty.utils import expandvars, log_error
 
+        try:
+            if 'allow_geninclude' not in signature(conf.parse_config_base).parameters:
+                raise TypeError('configuration parser lacks allow_geninclude')
+        except ValueError as exc:
+            raise TypeError('cannot inspect configuration parser signature') from exc
+
         self.errors, self.warnings, self.references = [], [], 0
         self.colour_sources, last = {}, {}
         bad, diagnostics = [], []
         changes = changes or {}
         original_line = conf.parse_line
+        unset = object()
+        original_open = getattr(conf, 'open', unset)
+        original_redirect = getattr(log_error, 'redirect', unset)
 
         def location():
             return f'{conf.currently_parsing.file}:{conf.currently_parsing.number}'
@@ -147,7 +162,16 @@ class Audit:
                                                item, options, bad, allow_geninclude=False)
         finally:
             conf.parse_line = original_line
-            del conf.open, log_error.redirect
+            for owner, name, previous in ((conf, 'open', original_open), (log_error, 'redirect', original_redirect)):
+                if previous is unset:
+                    delattr(owner, name)
+                else:
+                    setattr(owner, name, previous)
+        # Kitty can collect callback signature errors as bad config lines. They
+        # invalidate the audit even when sync ignores unrelated user config errors.
+        for failure in bad:
+            if isinstance(failure.exception, TypeError):
+                raise failure.exception
         if strict:
             self.errors.extend(diagnostics)
             self.errors.extend(f'{b.file}:{b.number}: {b.line}: {b.exception}' for b in bad)
@@ -340,7 +364,7 @@ def change(action, root, args, dry):
         return
     if action == 'check':
         audit = Audit(root, palette)
-        print(f'Kitty config: {root}' + (' (new)' if original is None else ''))
+        print(f'Kitty config: {root}' + (' (new)' if original is None else ''), flush=True)
         show(audit)
         if audit.errors:
             raise Conflict('Review the reported configuration before enabling Kitty colours')
@@ -373,8 +397,10 @@ def change(action, root, args, dry):
             if action != 'status':
                 show(audit)
             raise Conflict('Kitty integration requires one unambiguous static include; review the reported configuration')
-    except (Conflict, OSError, ImportError):
+    except (Conflict, OSError, ImportError, TypeError) as exc:
         if action == 'status':
+            if isinstance(exc, TypeError):
+                print(f'Kitty: {error_message(exc)}', file=sys.stderr)
             print('blocked')
             return
         raise
@@ -432,8 +458,8 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (Conflict, OSError, ImportError, subprocess.TimeoutExpired) as exc:
-        print(f'Kitty: {exc}', file=sys.stderr)
+    except (Conflict, OSError, ImportError, TypeError, subprocess.TimeoutExpired) as exc:
+        print(f'Kitty: {error_message(exc)}', file=sys.stderr)
         if sys.argv[1] == 'status':
             print('conflict')
             sys.exit(0)

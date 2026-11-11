@@ -270,10 +270,10 @@ if [ ! -f "$RICE/scripts/theming/kitty-theme.py" ]; then
     else
         warn "This rice does not include the Kitty configuration checker."
     fi
-elif [ "$KITTY" = enable ] || sh "$KITTY_THEME" check kitty; then
-    # The helper audits a first enable itself. Do not make repeat enables depend
-    # on a stricter check of unrelated user settings than the helper requires.
-    kitty_status=$(sh "$KITTY_THEME" status kitty)
+else
+    # Detect the choice before asking. Only enable requests the helper's audit;
+    # unrelated errors must not prevent the prompt or a routine reinstall.
+    kitty_status=$(sh "$KITTY_THEME" status kitty) || kitty_status=conflict
     if [ "$KITTY" = auto ] && [ "$FIRST_INSTALL" = 1 ] && [ "$kitty_status" = off ] &&
         [ "$YES" = 0 ] && [ "$DRY" = 0 ] && [ -t 0 ]; then
         read -r -p "  Enable SekaiPop's dynamic Kitty colours? [y/N] " answer
@@ -292,6 +292,15 @@ elif [ "$KITTY" = enable ] || sh "$KITTY_THEME" check kitty; then
         fi
     else
         info "Keeping the current Kitty colour choice."
+        case "$kitty_status" in
+            off|missing|on) ;;
+            pending) info "Kitty integration is waiting for the current palette; start or restart SekaiPop." ;;
+            blocked|conflict)
+                warn "Kitty integration needs review; no Kitty configuration was changed."
+                info "Inspect it with: sh \"$KITTY_THEME\" check kitty"
+                ;;
+            *) warn "Could not determine Kitty integration status; no Kitty configuration was changed." ;;
+        esac
     fi
 fi
 
