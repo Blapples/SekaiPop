@@ -462,6 +462,9 @@ Item {
                     && extrasLayer.cycleCardTab(event.key === Qt.Key_Left ? -1 : 1)) {
                     // Ctrl+Left / Ctrl+Right on the emoji card: the call in the
                     // condition does the work. Any other mode falls through.
+                    } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_P
+                        && extrasLayer.pinKey()) {
+                    // Ctrl+P on the clipboard card: pin / unpin the picked entry.
                     } else if (event.key === Qt.Key_Escape) {
                         face.back()
                     } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
