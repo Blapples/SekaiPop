@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import "../modules/common/functions/Extras.js" as X
+import "../modules/common/functions/ClipPins.js" as Pins
 import qs.services
 import qs.modules.common
 
@@ -175,7 +176,12 @@ Scope {
 
     // ===== clipboard history =====
     property bool clipAvailable: false     // set true once the check below finds both tools
-    property var clipEntries: []
+    // What the Clipboard card lists: the pins first (scripts/state/clip-pins.sh, kept
+    // apart from cliphist so they outlive its cap, a wipe and a delete), then the
+    // history without the copies of what is pinned (ClipPins.merge).
+    property var clipHistory: []
+    property var clipPins: []
+    readonly property var clipEntries: Pins.merge(root.clipPins, root.clipHistory)
     property string clipFull: ""          // the full text of clipSelectedId
     property string clipImage: ""         // file:// path of a decoded image entry
     property string clipSelectedId: ""
@@ -192,9 +198,11 @@ Scope {
     readonly property bool clipWatching: ClipboardWatcher.watching
 
     function refreshClip() {
-        if (!clipAvailable || clipList.running)
+        if (!clipAvailable)
             return
-        clipList.running = true
+        if (!clipList.running)
+            clipList.running = true
+        root.refreshPins()
     }
 
     Process {
@@ -210,7 +218,7 @@ Scope {
                 if (text === root.clipRaw)
                     return
                 root.clipRaw = text
-                root.clipEntries = X.parseClipList(text).slice(0, 300)
+                root.clipHistory = X.parseClipList(text).slice(0, 300)
             }
         }
     }
@@ -335,6 +343,7 @@ Scope {
         id: clipDecode
         property var entry: null
         command: entry === null ? ["true"]
+            : entry.pinned ? ["sh", root.pinScript, "show", entry.pin]
             : (entry.image
                 ? ["sh", "-c", clipImageScript, "sh", entry.id]
                 : ["sh", "-c", "printf '%s\\n' \"$1\"; cliphist decode \"$1\"", "sh", entry.id])
@@ -376,6 +385,10 @@ Scope {
     function copyClip(entry) {
         if (!entry)
             return
+        if (entry.pinned) {
+            Quickshell.execDetached(["sh", root.pinScript, "copy", entry.pin])
+            return
+        }
         if (entry.image) {
             // A picture goes back with its own type (png, jpeg...), found from the
             // file itself, so what you paste is the same picture.
@@ -387,12 +400,94 @@ Scope {
         Quickshell.execDetached(["sh", "-c", "cliphist decode \"$1\" | wl-copy", "sh", entry.id])
     }
 
+    // On a pin, Delete forgets the pin (the same as unpinning it): the card's
+    // Delete always means "take this off the list".
     function deleteClip(entry) {
         if (!entry)
             return
+        if (entry.pinned) {
+            root.unpinClip(entry)
+            return
+        }
         // `cliphist delete` reads the list line (or just "<id>\t...") on stdin.
         Quickshell.execDetached(["sh", "-c", "printf '%s\\t\\n' \"$1\" | cliphist delete", "sh", entry.id])
-        root.clipEntries = root.clipEntries.filter(e => e.id !== entry.id)
+        root.clipHistory = root.clipHistory.filter(e => e.id !== entry.id)
+    }
+
+    // ===== pinned clipboard entries =====
+    readonly property string pinScript: Directories.script("state/clip-pins.sh")
+    property string pinRaw: ""
+
+    function refreshPins() {
+        if (!pinList.running)
+            pinList.running = true
+    }
+
+    Process {
+        id: pinList
+        command: ["sh", root.pinScript, "list"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (text === root.pinRaw)
+                    return
+                root.pinRaw = text
+                root.clipPins = Pins.parsePinList(text)
+            }
+        }
+    }
+
+    // Pin and unpin write to disk, one at a time and in the order asked (a Process
+    // that is still running ignores `running = true`, see startClipDecode), and the
+    // list is read again after each.
+    property var pinQueue: []
+
+    function pinOp(args) {
+        root.pinQueue = root.pinQueue.concat([args])
+        if (!pinWrite.running)
+            root.nextPinOp()
+    }
+
+    function nextPinOp() {
+        if (root.pinQueue.length === 0) {
+            root.refreshPins()
+            return
+        }
+        pinWrite.args = root.pinQueue[0]
+        root.pinQueue = root.pinQueue.slice(1)
+        pinWrite.running = true
+    }
+
+    Process {
+        id: pinWrite
+        property var args: []
+        command: ["sh", root.pinScript].concat(args)
+        onRunningChanged: {
+            if (!running)
+                root.nextPinOp()
+        }
+    }
+
+    function pinClip(entry) {
+        if (!entry || entry.pinned)
+            return
+        root.pinOp(["pin", entry.id, entry.preview])
+    }
+
+    function unpinClip(entry) {
+        if (!entry || !entry.pinned)
+            return
+        // Gone from the card at once; the list read after the write agrees.
+        root.clipPins = root.clipPins.filter(e => e.id !== entry.id)
+        root.pinOp(["unpin", entry.pin])
+    }
+
+    function togglePin(entry) {
+        if (!entry)
+            return
+        if (entry.pinned)
+            root.unpinClip(entry)
+        else
+            root.pinClip(entry)
     }
 
     // ===== recent emoji =====

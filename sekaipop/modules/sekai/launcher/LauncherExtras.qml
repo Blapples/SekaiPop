@@ -251,6 +251,16 @@ Item {
         return false
     }
 
+    // Ctrl+P on the clipboard card pins (or unpins) the picked entry. true = it was ours.
+    function pinKey() {
+        if (root.cardMode !== "clip")
+            return false
+        const it = cardLoader.item
+        if (it && it.togglePin)
+            it.togglePin()
+        return true
+    }
+
     // Tab on the web card changes the search engine.
     function tab(step) {
         if (root.cardMode !== "web")
@@ -436,6 +446,7 @@ Item {
                 root.doneRequested()
             }
             onDeleteRequested: entry => extras.deleteClip(entry)
+            onPinRequested: entry => extras.togglePin(entry)
             onCloseRequested: root.doneRequested()
         }
     }

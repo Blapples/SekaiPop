@@ -12,7 +12,12 @@ import qs.modules.sekai.phone
 // were copied show as a picture. Typing after "clip " filters the list. Click
 // an entry to pick it, double-click to copy it right away.
 //
+// The pin key (or Ctrl+P) keeps the picked entry: pinned ones sit at the top with a
+// pin on their disc and outlive the history (its size cap, Clear history, Delete).
+// Press it again, or Delete, to let a pin go.
+//
 // Pure UI. `entries` is the (already filtered) list from ExtrasSource --
+// pins first ({ ..., pinned: true }, ClipPins.js), then
 // [{ id, preview, image, line }], newest first -- and `fullText` /
 // `fullImage` are the picked entry's contents, which ExtrasSource loads when
 // this card reports a new pick (`highlighted`).
@@ -40,6 +45,7 @@ PhoneCard {
     signal highlighted(var entry)
     signal copyRequested(var entry)
     signal deleteRequested(var entry)
+    signal pinRequested(var entry)
     signal closeRequested()
 
     // The id of the picked entry, so a refresh that shifts every index
@@ -93,6 +99,13 @@ PhoneCard {
         const e = entryAt(current)
         if (e)
             copyRequested(e)
+    }
+
+    // Ctrl+P from the search box (LauncherFace.qml): the pin key.
+    function togglePin() {
+        const e = entryAt(current)
+        if (e)
+            pinRequested(e)
     }
 
     readonly property color darkInk: mt.colBorder
@@ -210,7 +223,8 @@ PhoneCard {
 
                     MaterialIcon {
                         anchors.centerIn: parent
-                        name: row.modelData.image ? "image" : "notes"
+                        name: row.modelData.pinned ? "push_pin" : (row.modelData.image ? "image" : "notes")
+                        fill: row.modelData.pinned ? 1 : mt.iconFill
                         size: 22
                         weight: 600
                         color: row.sel ? root.darkInk : mt.pInkSub
@@ -395,7 +409,7 @@ PhoneCard {
             Text {
                 anchors.left: parent.left
                 anchors.leftMargin: 8
-                anchors.right: delKey.left
+                anchors.right: pinKey.left
                 anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 elide: Text.ElideRight
@@ -407,16 +421,34 @@ PhoneCard {
                     const e = root.currentEntry
                     if (!e)
                         return ""
+                    const pin = e.pinned ? "Pinned \u00b7 " : ""
                     if (e.image)
-                        return X.imageLabel(e.preview)
+                        return pin + X.imageLabel(e.preview)
                     if (root.loading)
                         return "Loading\u2026"
                     if (root.failed && root.fullText === "")
                         return "Preview only \u2014 the whole entry could not be loaded"
                     const t = root.fullText
                     const lines = t.split("\n").length
-                    return t.length + " characters \u00b7 " + lines + (lines === 1 ? " line" : " lines")
+                    return pin + t.length + " characters \u00b7 " + lines + (lines === 1 ? " line" : " lines")
                 }
+            }
+
+            // Lit (cyan, the pin filled in) while the picked entry is pinned.
+            PhoneKey {
+                id: pinKey
+                readonly property bool pinnedNow: root.currentEntry !== null && root.currentEntry.pinned === true
+                anchors.right: delKey.left
+                anchors.rightMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                width: 64
+                height: 50
+                icon: "push_pin"
+                iconSize: 26
+                fill: pinnedNow ? mt.accentCyan : mt.pSurface
+                ink: pinnedNow ? root.darkInk : mt.pInk
+                enabled: root.currentEntry !== null
+                onClicked: root.pinRequested(root.currentEntry)
             }
 
             PhoneKey {
