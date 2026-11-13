@@ -28,6 +28,31 @@ nothing typed, moving the mouse over the grid hands the pick back to the mouse
 (`keyNav = false`) and the plate goes until a key is pressed again. While something is
 typed it stays on the match Enter would open, since that is still true.
 
+## Typing, then the arrows
+
+While something is typed, Left and Right belong to the search box: they move the
+caret in what you typed, and Enter opens the first match (the one under the plate).
+To walk the matches with the keys:
+
+- **Down** takes the keys into the grid on that first match. It does not move the
+  plate: the first match is already what Enter opens, so Down only says "the arrows
+  are for the grid now". (A row above the grid, such as a strong system-action match,
+  still takes Down first, as before.)
+- From there **Left / Right** move the plate from match to match, Up / Down move it a
+  row, and Enter opens the picked one.
+- **Typing** another letter hands Left / Right back to the caret, and the plate goes
+  back to the first of the new matches. Moving the mouse over the grid does the same.
+
+With nothing typed there is no caret to move, so the arrows always go to the grid.
+
+`LauncherFace.qml`: `gridHasArrows` says who Left / Right belong to; `moveKey()` has
+the first-Down case; `onQueryChanged` sets `keyNav` back to false. Checked by
+`tests/launcher-test/search_arrows_test.js`.
+
+Before this, Left / Right only went to the grid with nothing typed, so while searching
+the only way through the matches was Up / Down a whole row at a time (and the first
+Down skipped the first row).
+
 ## How
 
 One item, the `GridView`'s `highlight` (`pickPlate`), drawn under the tiles and moved

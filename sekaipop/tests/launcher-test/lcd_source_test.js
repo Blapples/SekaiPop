@@ -72,7 +72,9 @@ assert.ok(num("washBody") <= 0.2 && num("washTop") <= 0.2,
 assert.ok(!/lcdChip/.test(face), "no chip behind the app names or \"No apps match\"")
 assert.ok(!/color:\s*Theme\.pRingWhite|Theme\.accentMint/.test(face.slice(face.indexOf("id: tileDelegate"))),
           "the app tile is no button: no white ring, no lit mint-to-cyan face")
-assert.ok((face.match(/style:\s*face\.lcdOn \? Text\.Outline/g) || []).length >= 2,
+// A name on the keyboard cursor plate drops the edge: it sits on the mint plate, not the
+// wallpaper (docs/LAUNCHER-KEY-CURSOR.md).
+assert.ok((face.match(/style:\s*face\.lcdOn( && !tile\.picked)? \? Text\.Outline/g) || []).length >= 2,
           "the app names and \"No apps match\" get a thin dark edge over the wallpaper")
 assert.ok(!/clockCol/.test(face), "no chip behind the clock and date")
 
