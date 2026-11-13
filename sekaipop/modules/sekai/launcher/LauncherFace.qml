@@ -93,8 +93,14 @@ Item {
     readonly property string query: input.text
     readonly property bool searching: query.trim().length > 0
     // The pick comes from the arrow keys (not the mouse): only then is one
-    // tile picked out.
+    // tile picked out. Typing sets it back to false, so Left / Right move the
+    // caret in what is typed again until Down goes back into the grid.
     property bool keyNav: false
+    // Left / Right move the grid's pick rather than the search box's caret: with
+    // nothing typed, or once Down (or Tab) has taken the keys into the grid while
+    // typing (docs/LAUNCHER-KEY-CURSOR.md, "Typing, then the arrows").
+    readonly property bool gridHasArrows: query.length === 0
+        || (keyNav && drawerGrid.currentIndex >= 0 && extrasLayer.rowPick < 0)
     // The grid's pick is shown (the cursor plate behind a tile) whenever it is what
     // Enter would open: after the arrow keys moved it, and also while searching,
     // where Enter opens the first match even before an arrow key is pressed. Not
@@ -237,6 +243,12 @@ Item {
         const grid = drawerGrid
         if (grid.count === 0)
             return
+        // While typing the pick already sits on the first match (Enter opens it), so
+        // the first Down takes the keys into the grid there instead of a row lower.
+        if (key === Qt.Key_Down && face.searching && !face.keyNav && grid.currentIndex >= 0) {
+            face.keyNav = true
+            return
+        }
         face.keyNav = true
         if (grid.currentIndex < 0) {
             grid.currentIndex = 0
@@ -254,6 +266,7 @@ Item {
 
     // New text: the pick starts on the first match.
     onQueryChanged: {
+        face.keyNav = false
         drawerGrid.currentIndex = face.searching ? 0 : -1
         drawerGrid.positionViewAtBeginning()
         // Once the model has taken the new list as well.
@@ -471,8 +484,8 @@ Item {
                         if (!extrasLayer.enter((event.modifiers & Qt.ShiftModifier) !== 0))
                             face.activateCurrent()
                     } else if (event.key === Qt.Key_Up || event.key === Qt.Key_Down
-                        || event.key === Qt.Key_Left && (input.text.length === 0 || extrasLayer.cardMode === "emoji")
-                        || event.key === Qt.Key_Right && (input.text.length === 0 || extrasLayer.cardMode === "emoji")
+                        || event.key === Qt.Key_Left && (face.gridHasArrows || extrasLayer.cardMode === "emoji")
+                        || event.key === Qt.Key_Right && (face.gridHasArrows || extrasLayer.cardMode === "emoji")
                     ) {
                         face.moveKey(event.key)
                     } else if (event.key === Qt.Key_Tab) {
