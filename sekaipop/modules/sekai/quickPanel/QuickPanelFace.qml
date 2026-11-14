@@ -108,6 +108,7 @@ Item {
     // row with Brightness (GammaBrightnessSlider.qml).
     property real gamma: 100
     property bool keepAwakeOn: false
+    property string keepAwakeMode: "off"
     property bool notificationsOn: true
     property bool editing: false
     // Night Light / Game Mode, read back from Hyprland by QuickSource.qml.
@@ -144,6 +145,7 @@ Item {
     // ===== Wi-Fi / Bluetooth device lists =====
     property bool networkDialogOpen: false
     property bool bluetoothDialogOpen: false
+    property bool keepAwakeDialogOpen: false
     property var wifiNetworks: []          // [{ssid, signal, secured, connected}]
     property bool wifiScanning: false
     property bool wifiManualScanning: false
@@ -273,6 +275,7 @@ Item {
     signal brightnessMoved(real value)
     signal gammaMoved(real value)
     signal keepAwakeToggled()
+    signal keepAwakeModeRequested(string mode)
     signal notificationsToggled()
     signal editToggled()
     signal nightLightToggled()
@@ -1313,6 +1316,7 @@ Item {
     // network list to pick from, so it does nothing. Only one of these is
     // ever open: opening one closes the rest.
     function closeDialogs() {
+        face.keepAwakeDialogOpen = false
         face.networkDialogOpen = false
         face.bluetoothDialogOpen = false
         face.nightLightDialogOpen = false
@@ -1333,6 +1337,9 @@ Item {
         } else if (id === "microphone" || id === "speaker") {
             face.closeDialogs()
             face.audioDialogKind = id
+        } else if (id === "keepAwake") {
+            face.closeDialogs()
+            face.keepAwakeDialogOpen = true
         }
     }
 
@@ -2475,6 +2482,14 @@ Item {
         onAdvancedRequested: face.bluetoothAdvancedRequested()
         onConnectRequested: address => face.bluetoothConnectRequested(address)
         onDisconnectRequested: address => face.bluetoothDisconnectRequested(address)
+    }
+
+    KeepAwakeDialog {
+        id: keepAwakeDialog
+        open: face.keepAwakeDialogOpen
+        mode: face.keepAwakeMode
+        onCloseRequested: face.keepAwakeDialogOpen = false
+        onModeSelected: m => face.keepAwakeModeRequested(m)
     }
 
     VolumeMixerDialog {

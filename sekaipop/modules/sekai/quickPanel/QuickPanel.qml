@@ -516,6 +516,7 @@ Scope {
             panelFace.powerMenuOpen = false
             panelFace.networkDialogOpen = false
             panelFace.bluetoothDialogOpen = false
+            panelFace.keepAwakeDialogOpen = false
             panelFace.nightLightDialogOpen = false
             panelFace.audioDialogKind = ""
             setRoute(PR.go(phoneRoute, kind))
@@ -939,6 +940,7 @@ Scope {
         }
         if (event.key === Qt.Key_Escape) {
             if (panelFace.powerMenuOpen || panelFace.networkDialogOpen || panelFace.bluetoothDialogOpen
+                    || panelFace.keepAwakeDialogOpen
                     || panelFace.nightLightDialogOpen || panelFace.audioDialogKind !== "")
                 closeQuickDialogs()
             else
@@ -1069,6 +1071,7 @@ Scope {
             panelFace.powerMenuOpen = false
             panelFace.networkDialogOpen = false
             panelFace.bluetoothDialogOpen = false
+            panelFace.keepAwakeDialogOpen = false
             panelFace.nightLightDialogOpen = false
             panelFace.audioDialogKind = ""
             hotBlockedUntil = Date.now() + 1200
@@ -2784,6 +2787,7 @@ Scope {
                         brightness: root.source.brightness
                         gamma: root.source.gamma
                         keepAwakeOn: root.source.keepAwakeOn
+                        keepAwakeMode: root.source.keepAwakeOn ? root.source.keepAwakeMode : "off"
                         notificationsOn: root.source.notificationsOn
                         editing: root.source.editing
                         nightLightOn: root.source.nightLightOn
@@ -2841,6 +2845,7 @@ Scope {
                         onBrightnessMoved: value => root.source.setBrightness(value)
                         onGammaMoved: value => root.source.setGamma(value)
                         onKeepAwakeToggled: root.source.toggleKeepAwake()
+                        onKeepAwakeModeRequested: m => root.source.setKeepAwake(m)     
                         onNotificationsToggled: root.source.toggleNotifications()
                         onEditToggled: root.source.toggleEditing()
                         onNightLightToggled: root.source.toggleNightLight()
