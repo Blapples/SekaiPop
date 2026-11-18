@@ -116,7 +116,7 @@ Singleton {
                 edge = Math.max(edge, m.x + DM.logicalSize(m.w, m.h, m.scale, m.transform).w)
         })
         // Hyprland only says whether VRR is on; the profile in use says "fullscreen only".
-        const prof = root.hyprmon ? HyprmonService.profile(HyprmonService.active) : null
+        const prof = root.hyprmon ? HyprmonService.profile(HyprmonService.current) : null
         const ids = HM.hardwareIds(L)
         const next = L.map(m => {
             const sz = DM.logicalSize(m.w, m.h, m.scale, m.transform)

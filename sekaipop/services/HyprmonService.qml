@@ -39,6 +39,11 @@ Singleton {
     property string active: ""
     // The profile put on last from here (by hand or automatically).
     property string lastApplied: ""
+    // The profile the card calls "on now": hyprmon's own answer, or, when hyprmon finds
+    // none (it compares a screen that is off by its position too, which Hyprland and the
+    // profile may not agree on), the one put on last.
+    readonly property string current: root.active !== "" ? root.active
+        : (root.profile(root.lastApplied) ? root.lastApplied : "")
     // { setKey: profileName }: the profile used last on each set of screens.
     property var remembered: ({})
     // A command is running (the card shows it and does not start another).

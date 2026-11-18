@@ -32,7 +32,7 @@ const readAgain = { restart() {} }
 root.script = "displays.sh"
 // HyprmonService as the card sees it: one profile, and what was saved into it
 const saved = []
-const HyprmonService = { active: "Desk", profile: n => n === "Desk" ? { name: "Desk", monitors: [{ name: "HDMI-A-1", hardware_id: "Acme/Mon/7", Active: true, VRR: 2, alias: "Big one" }] } : null,
+const HyprmonService = { active: "Desk", current: "Desk", profile: n => n === "Desk" ? { name: "Desk", monitors: [{ name: "HDMI-A-1", hardware_id: "Acme/Mon/7", Active: true, VRR: 2, alias: "Big one" }] } : null,
     saveProfile: (n, m) => { saved.push([n, m]); return true } }
 const names = ["resetDraft", "item", "edit", "sizeOf", "rects", "settle", "resized", "setOn", "setMain", "setResolution", "setMode", "setScale", "setPosition", "setPlace", "unlinkedNames", "draftSpecs", "liveSpecs", "apply", "keep", "revert", "discard",
     "setTransform", "setVrr", "setBitDepth", "setColorMode", "setSdr", "setMirror", "mirrorSources", "hyprmonMonitors"]

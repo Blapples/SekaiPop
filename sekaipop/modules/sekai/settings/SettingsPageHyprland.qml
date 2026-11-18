@@ -113,10 +113,10 @@ SettingsPage {
             DisplayService.refresh()
             HyprmonService.refresh()
             // "Keep saves to" follows the profile that is on, until you pick one yourself.
-            if (!displayCard.targetPicked && HyprmonService.active !== "")
-                DisplayService.saveTarget = HyprmonService.active
-            if (displayCard.profilePick === "" && HyprmonService.active !== "")
-                displayCard.profilePick = HyprmonService.active
+            if (!displayCard.targetPicked && HyprmonService.current !== "")
+                DisplayService.saveTarget = HyprmonService.current
+            if (displayCard.profilePick === "" && HyprmonService.current !== "")
+                displayCard.profilePick = HyprmonService.current
         }
     }
 
@@ -635,13 +635,13 @@ SettingsPage {
         // A switch (by itself, or Apply) moves the card to the profile that is on now.
         Connections {
             target: HyprmonService
-            function onActiveChanged() {
-                if (HyprmonService.active === "")
+            function onCurrentChanged() {
+                if (HyprmonService.current === "")
                     return
-                displayCard.profilePick = HyprmonService.active
+                displayCard.profilePick = HyprmonService.current
                 displayCard.deleteArmed = ""
                 displayCard.targetPicked = false
-                DisplayService.saveTarget = HyprmonService.active
+                DisplayService.saveTarget = HyprmonService.current
             }
         }
         // The screen whose settings are shown (one at a time: the list gets long with
@@ -681,9 +681,9 @@ SettingsPage {
         SettingChoice {
             visible: DisplayService.hyprmon && HyprmonService.profiles.length > 0
             label: "Profile"
-            sublabel: HyprmonService.active !== "" ? HyprmonService.active + " is on now" : "None matches the screens exactly"
+            sublabel: HyprmonService.current !== "" ? HyprmonService.current + " is on now" : "None matches the screens exactly"
             current: displayCard.profilePick
-            options: HyprmonService.profiles.map(p => ({ id: p.name, label: p.name, icon: p.name === HyprmonService.active ? "check_circle" : "view_quilt" }))
+            options: HyprmonService.profiles.map(p => ({ id: p.name, label: p.name, icon: p.name === HyprmonService.current ? "check_circle" : "view_quilt" }))
             onPicked: id => {
                 displayCard.profilePick = id
                 displayCard.deleteArmed = ""
@@ -709,7 +709,7 @@ SettingsPage {
             SettingAction {
                 icon: "play_arrow"
                 label: "Apply"
-                detail: displayCard.profilePick === HyprmonService.active ? "It is on now" : "Put these screens on"
+                detail: displayCard.profilePick === HyprmonService.current ? "It is on now" : "Put these screens on"
                 busy: HyprmonService.busy
                 onActivated: if (!DisplayService.confirming) { DisplayService.discard(); HyprmonService.apply(displayCard.profilePick, "hand") }
             }
