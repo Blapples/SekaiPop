@@ -4,12 +4,18 @@ import Quickshell
 import Quickshell.Io
 import qs.modules.common
 import "../modules/common/functions/DisplayMath.js" as DM
+import "../modules/common/functions/HyprmonMath.js" as HM
 
 // The Displays card's brain (Settings > Hyprland). Reads the screens from Hyprland,
 // keeps a draft of what you are changing, applies it live, and asks "keep these?"
 // with a countdown: if you do not answer (a black screen, say) it goes back by
 // itself. Only "Keep" writes ~/.config/hypr/monitors.lua, the file nwg-displays
 // writes and hyprland.lua loads (scripts/hyprland/displays.sh does the work).
+//
+// With hyprmon as the display handler (`hyprmon`, Settings' "Display handler") the
+// card does the same, plus hyprmon's own settings (rotation, VRR, colour depth and
+// mode, HDR levels, mirroring), and "Keep" saves the screens into a hyprmon profile
+// (`saveTarget`) instead of monitors.lua (services/HyprmonService.qml).
 //
 //     DisplayService.setScale("HDMI-A-1", "1.25")
 //     DisplayService.apply()          // shows it, starts the countdown
@@ -19,9 +25,11 @@ import "../modules/common/functions/DisplayMath.js" as DM
 Singleton {
     id: root
 
-    // What Hyprland has now: [{ name, desc, on, w, h, hz, x, y, scale, transform, modes }].
+    // What Hyprland has now: [{ name, desc, on, w, h, hz, x, y, scale, transform, modes,
+    // make, model, serial, bitDepth, cm, sdrBrightness, sdrSaturation, vrr, mirror }].
     property var live: []
-    // What is being edited: [{ name, desc, on, modeId, scale, place, x, y, transform, modes }].
+    // What is being edited: [{ name, desc, on, modeId, scale, place, x, y, transform, modes,
+    // make, model, serial, bitDepth, cm, sdrBrightness, sdrSaturation, vrr, mirror }].
     // x, y is where the screen sits in the layout (logical px); `place` is only which side
     // of the main screen that is, for the Left / Right / Above / Below keys.
     property var draft: []
@@ -43,6 +51,11 @@ Singleton {
     readonly property var enabledNames: root.draft.filter(d => d.on).map(d => d.name)
 
     readonly property string script: Directories.script("hyprland/displays.sh")
+
+    // hyprmon is the display handler: hyprmon's settings are shown and sent, and Keep
+    // saves to the profile `saveTarget` ("" = keep for this session only).
+    readonly property bool hyprmon: HyprmonService.on
+    property string saveTarget: ""
 
     // ===== reading =====
     function refresh() {
@@ -73,7 +86,16 @@ Singleton {
                     y: m.y | 0,
                     scale: Number(m.scale) || 1,
                     transform: m.transform | 0,
-                    modes: DM.parseModes(m.availableModes || [])
+                    modes: DM.parseModes(m.availableModes || []),
+                    make: String(m.make || ""),
+                    model: String(m.model || ""),
+                    serial: String(m.serial || ""),
+                    bitDepth: HM.bitDepthOf(m.currentFormat),
+                    cm: String(m.colorManagementPreset || "srgb"),
+                    sdrBrightness: Number(m.sdrBrightness) || 1,
+                    sdrSaturation: Number(m.sdrSaturation) || 1,
+                    vrr: m.vrr === true ? 1 : 0,
+                    mirror: m.mirrorOf && m.mirrorOf !== "none" ? String(m.mirrorOf) : ""
                 }))
                 // Never replace what you are in the middle of changing.
                 if (!root.dirty && !root.confirming)
@@ -93,8 +115,12 @@ Singleton {
             if (m.on)
                 edge = Math.max(edge, m.x + DM.logicalSize(m.w, m.h, m.scale, m.transform).w)
         })
+        // Hyprland only says whether VRR is on; the profile in use says "fullscreen only".
+        const prof = root.hyprmon ? HyprmonService.profile(HyprmonService.active) : null
+        const ids = HM.hardwareIds(L)
         const next = L.map(m => {
             const sz = DM.logicalSize(m.w, m.h, m.scale, m.transform)
+            const pm = prof ? HM.findMonitor(prof, ids[m.name], m.name) : null
             return {
                 name: m.name,
                 desc: m.desc,
@@ -105,7 +131,16 @@ Singleton {
                 x: m.on ? m.x : Math.round(edge),
                 y: m.on ? m.y : 0,
                 transform: m.transform,
-                modes: m.modes
+                modes: m.modes,
+                make: m.make || "",
+                model: m.model || "",
+                serial: m.serial || "",
+                bitDepth: m.bitDepth || 8,
+                cm: m.cm || "srgb",
+                sdrBrightness: m.sdrBrightness || 1,
+                sdrSaturation: m.sdrSaturation || 1,
+                vrr: m.vrr && pm && pm.VRR === 2 ? 2 : (m.vrr | 0),
+                mirror: m.mirror || ""
             }
         })
         // Only when something really differs: the controls are rebuilt by a new list,
@@ -139,9 +174,10 @@ Singleton {
         return { w: Math.ceil(sz.w - 1e-6), h: Math.ceil(sz.h - 1e-6) }
     }
 
-    // The screens that are on, as layout rectangles: [{ name, x, y, w, h }].
+    // The screens that are on, as layout rectangles: [{ name, x, y, w, h }]. A mirrored
+    // screen shows another one's picture and takes no room of its own.
     function rects() {
-        return root.draft.filter(d => d.on).map(d => {
+        return root.draft.filter(d => d.on && !d.mirror).map(d => {
             const sz = root.sizeOf(d)
             return { name: d.name, x: d.x, y: d.y, w: sz.w, h: sz.h }
         })
@@ -191,7 +227,13 @@ Singleton {
             root.rects().forEach(r => { edge = Math.max(edge, r.x + r.w) })
             root.edit(name, { on: true, x: Math.round(edge), y: 0 })
         } else {
-            root.edit(name, { on: false })
+            root.edit(name, { on: false, mirror: "" })
+            // Screens that showed this one's picture get their own again.
+            root.draft.filter(x => x.mirror === name).forEach(x => {
+                let edge = 0
+                root.rects().forEach(r => { edge = Math.max(edge, r.x + r.w) })
+                root.edit(x.name, { mirror: "", x: Math.round(edge), y: 0 })
+            })
         }
         if (!on && root.mainName === name) {
             const other = root.draft.find(x => x.on && x.name !== name)
@@ -267,6 +309,75 @@ Singleton {
         root.settle()
     }
 
+    // ===== hyprmon's settings (shown with hyprmon as the handler) =====
+    // Rotation and flips, Hyprland's transform 0..7: turning a screen on its side
+    // changes the room it takes, like a new mode does.
+    function setTransform(name, t) {
+        const d = root.item(name)
+        const v = Number(t) | 0
+        if (!d || v < 0 || v > 7 || d.transform === v)
+            return
+        const before = root.sizeOf(d)
+        root.edit(name, { transform: v })
+        root.resized(name, before)
+    }
+
+    // 0 off, 1 on, 2 only for fullscreen windows.
+    function setVrr(name, v) {
+        const n = Number(v) | 0
+        if (root.item(name) && n >= 0 && n <= 2)
+            root.edit(name, { vrr: n })
+    }
+
+    function setBitDepth(name, bits) {
+        const n = Number(bits) | 0
+        if (root.item(name) && (n === 8 || n === 10))
+            root.edit(name, { bitDepth: n })
+    }
+
+    function setColorMode(name, cm) {
+        if (root.item(name) && HM.COLOR_MODES.indexOf(cm) >= 0)
+            root.edit(name, { cm: cm })
+    }
+
+    // HDR only: how bright and how saturated SDR content is drawn (1 = as is).
+    function setSdr(name, which, v) {
+        const n = Math.round(Number(v) * 100) / 100
+        if (!root.item(name) || !(n > 0) || n > 3)
+            return
+        root.edit(name, which === "saturation" ? { sdrSaturation: n } : { sdrBrightness: n })
+    }
+
+    // Show another screen's picture ("" = its own again). A circle (A mirrors B mirrors
+    // A) is refused; returns whether it was taken. A screen that stops mirroring joins on
+    // the right of the others, as one that is switched on does.
+    function setMirror(name, source) {
+        const d = root.item(name)
+        const src = source || ""
+        if (!d || d.mirror === src)
+            return true
+        if (src !== "" && (HM.mirrorLoops(root.draft, name, src) || !root.item(src) || !root.item(src).on))
+            return false
+        if (src === "") {
+            let edge = 0
+            root.rects().forEach(r => { edge = Math.max(edge, r.x + r.w) })
+            root.edit(name, { mirror: "", x: Math.round(edge), y: 0 })
+        } else {
+            root.edit(name, { mirror: src })
+            if (root.mainName === name) {
+                const other = root.draft.find(x => x.on && !x.mirror && x.name !== name)
+                root.mainName = other ? other.name : root.mainName
+            }
+        }
+        root.settle()
+        return true
+    }
+
+    // Screens that may be mirrored by `name` (on, not itself, no circle).
+    function mirrorSources(name) {
+        return root.draft.filter(d => d.on && d.name !== name && !HM.mirrorLoops(root.draft, name, d.name)).map(d => d.name)
+    }
+
     // Screens the pointer cannot get to from the main screen (a gap in the layout).
     function unlinkedNames() {
         const rs = root.rects()
@@ -291,13 +402,32 @@ Singleton {
         root.rects().forEach(r => { edge = Math.max(edge, norm[r.name][0] + r.w) })
         return root.draft.map(d => {
             const p = norm[d.name] || [Math.round(edge), 0]
-            return DM.spec(d.name, d.on, d.modeId, p[0], p[1], d.scale)
+            const s = DM.spec(d.name, d.on, d.modeId, p[0], p[1], d.scale)
+            return root.hyprmon && d.on ? s + "|" + HM.extras(d).join(",") : s
         })
     }
 
     // The screens as they are now, to go back to.
     function liveSpecs() {
-        return root.live.map(m => DM.spec(m.name, m.on, DM.matchMode(m.modes, m.w, m.h, m.hz), m.on ? m.x : undefined, m.on ? m.y : undefined, m.scale))
+        return root.live.map(m => {
+            const s = DM.spec(m.name, m.on, DM.matchMode(m.modes, m.w, m.h, m.hz), m.on ? m.x : undefined, m.on ? m.y : undefined, m.scale)
+            return root.hyprmon && m.on ? s + "|" + HM.extras(m).join(",") : s
+        })
+    }
+
+    // The draft in hyprmon's profile shape (HM.toProfileMonitor), positions shifted so
+    // the smallest x and y are 0; a screen that is off is written as hyprmon does (-1, -1).
+    function hyprmonMonitors(profileName) {
+        const pos = {}
+        root.rects().forEach(r => { pos[r.name] = [r.x, r.y] })
+        const norm = DM.normalize(pos)
+        const ids = HM.hardwareIds(root.draft)
+        const prof = HyprmonService.profile(profileName)
+        return root.draft.map(d => {
+            const mode = DM.modeById(d.modes, d.modeId) || (d.modes.length > 0 ? d.modes[0] : null)
+            const p = d.on ? (norm[d.name] || [0, 0]) : [-1, -1]
+            return HM.toProfileMonitor(d, ids[d.name], p[0], p[1], mode, HM.findMonitor(prof, ids[d.name], d.name))
+        })
     }
 
     function apply() {
@@ -311,14 +441,21 @@ Singleton {
         readAgain.restart()
     }
 
-    // Keep: write monitors.lua and stay as it is.
+    // Keep: write monitors.lua and stay as it is. With hyprmon: save into the profile
+    // `saveTarget` (which hyprmon then writes to hyprmon.lua); with no profile picked the
+    // screens just stay as they are for this session.
     function keep() {
         if (!root.confirming)
             return
         countdown.stop()
         root.confirming = false
         root.dirty = false
-        runner.exec(["sh", root.script, "save"].concat(root.draftSpecs()))
+        if (root.hyprmon) {
+            if (HM.validName(root.saveTarget))
+                HyprmonService.saveProfile(root.saveTarget, root.hyprmonMonitors(root.saveTarget))
+        } else {
+            runner.exec(["sh", root.script, "save"].concat(root.draftSpecs()))
+        }
         readAgain.restart()
     }
 

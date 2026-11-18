@@ -5,6 +5,8 @@ const fs = require("fs")
 const locate = require("../lib/locate.js")
 const dmSrc = fs.readFileSync(locate("modules/common/functions/DisplayMath.js"), "utf8").replace(".pragma library", "")
 const DM = new Function(dmSrc + "; return { SCALES, parseModes, matchMode, modeById, logicalSize, placeOf, positions, spec, resolutions, currentRes, rates, modeForRes, overlaps, snap, separate, dock, reflow, normalize, touches, unlinked, view }")()
+const hmSrc = fs.readFileSync(locate("modules/common/functions/HyprmonMath.js"), "utf8").replace(".pragma library", "")
+const HM = new Function(hmSrc + "; return { hardwareId, hardwareIds, resolve, matchProfile, setKey, chooseProfile, bitDepthOf, COLOR_MODES, isHdr, extras, mirrorLoops, toProfileMonitor, mergeMonitors, findMonitor, summary, validName }")()
 const qml = fs.readFileSync(locate("services/DisplayService.qml"), "utf8")
 
 function grab(name) {
@@ -22,16 +24,22 @@ function grab(name) {
 
 const calls = []
 const root = { live: [], draft: [], mainName: "", names: [], dirty: false, confirming: false, previous: [], secondsLeft: 0, confirmSeconds: 15,
+    hyprmon: false, saveTarget: "",
     get enabledCount() { return this.draft.filter(d => d.on).length } }
 const runner = { exec: c => calls.push(c) }
 const countdown = { restart() {}, stop() {} }
 const readAgain = { restart() {} }
 root.script = "displays.sh"
-const names = ["resetDraft", "item", "edit", "sizeOf", "rects", "settle", "resized", "setOn", "setMain", "setResolution", "setMode", "setScale", "setPosition", "setPlace", "unlinkedNames", "draftSpecs", "liveSpecs", "apply", "keep", "revert", "discard"]
+// HyprmonService as the card sees it: one profile, and what was saved into it
+const saved = []
+const HyprmonService = { active: "Desk", profile: n => n === "Desk" ? { name: "Desk", monitors: [{ name: "HDMI-A-1", hardware_id: "Acme/Mon/7", Active: true, VRR: 2, alias: "Big one" }] } : null,
+    saveProfile: (n, m) => { saved.push([n, m]); return true } }
+const names = ["resetDraft", "item", "edit", "sizeOf", "rects", "settle", "resized", "setOn", "setMain", "setResolution", "setMode", "setScale", "setPosition", "setPlace", "unlinkedNames", "draftSpecs", "liveSpecs", "apply", "keep", "revert", "discard",
+    "setTransform", "setVrr", "setBitDepth", "setColorMode", "setSdr", "setMirror", "mirrorSources", "hyprmonMonitors"]
 const body = names.map(grab).join("\n")
 // the methods are written as "name(args) {...}", so an object literal takes them as they are
-const methods = new Function("root", "DM", "runner", "countdown", "readAgain",
-    "return {\n" + names.map(n => grab(n)).join(",\n") + "\n}")(root, DM, runner, countdown, readAgain)
+const methods = new Function("root", "DM", "HM", "HyprmonService", "runner", "countdown", "readAgain",
+    "return {\n" + names.map(n => grab(n)).join(",\n") + "\n}")(root, DM, HM, HyprmonService, runner, countdown, readAgain)
 Object.assign(root, methods)
 
 let fails = 0
@@ -178,6 +186,66 @@ eq(root.sizeOf(root.item("A")), { w: 1098, h: 618 }, "175 % rounds up")
 root.setPlace("B", "below")
 root.setPlace("B", "right")
 eq(root.draftSpecs()[1].split("|").slice(3, 5), ["1098", "0"], "flush right of a fractional screen lands past its edge")
+
+// ===== hyprmon as the handler =====
+const extra = { make: "", model: "", serial: "", bitDepth: 8, cm: "srgb", sdrBrightness: 1, sdrSaturation: 1, vrr: 0, mirror: "" }
+root.hyprmon = true
+root.live = [
+    Object.assign({ name: "eDP-1", desc: "Laptop", on: true, w: 1920, h: 1080, hz: 60, x: 1920, y: 0, scale: 1, transform: 0, modes: modesLaptop }, extra, { make: "LG", model: "Panel" }),
+    Object.assign({ name: "HDMI-A-1", desc: "Monitor", on: true, w: 1920, h: 1080, hz: 143.981, x: 0, y: 0, scale: 1, transform: 0, modes: modesHdmi }, extra,
+                  { make: "Acme", model: "Mon", serial: "7", vrr: 1, cm: "hdr", sdrBrightness: 1.2, bitDepth: 10 })
+]
+root.dirty = false; root.confirming = false
+root.resetDraft()
+eq(root.item("HDMI-A-1").vrr, 2, "VRR read as on, the profile in use says fullscreen only")
+eq(root.item("HDMI-A-1").cm, "hdr", "colour mode carried into the draft")
+eq(root.draftSpecs(), ["eDP-1|on|1920x1080@60.00|1920|0|1.00|", "HDMI-A-1|on|1920x1080@144.00|0|0|1.00|vrr=2,bitdepth=10,cm=hdr,sdrbrightness=1.20"],
+   "hyprmon specs carry the extras")
+eq(root.liveSpecs()[1], "HDMI-A-1|on|1920x1080@144.00|0|0|1.00|vrr=1,bitdepth=10,cm=hdr,sdrbrightness=1.20", "live specs too (to go back to)")
+
+root.setTransform("eDP-1", 1)
+eq(root.draftSpecs()[0], "eDP-1|on|1920x1080@60.00|1920|0|1.00|transform=1", "rotated")
+eq(root.sizeOf(root.item("eDP-1")), { w: 1080, h: 1920 }, "a rotated screen takes the room on its side")
+root.setTransform("eDP-1", 9)
+eq(root.item("eDP-1").transform, 1, "transform past 7 refused")
+root.setVrr("eDP-1", 3); root.setBitDepth("eDP-1", 12); root.setColorMode("eDP-1", "neon")
+eq([root.item("eDP-1").vrr, root.item("eDP-1").bitDepth, root.item("eDP-1").cm], [0, 8, "srgb"], "bad values refused")
+root.setSdr("HDMI-A-1", "saturation", 0.9)
+eq(root.item("HDMI-A-1").sdrSaturation, 0.9, "SDR saturation")
+
+// mirroring
+eq(root.mirrorSources("eDP-1"), ["HDMI-A-1"], "what the laptop may mirror")
+eq(root.setMirror("eDP-1", "HDMI-A-1"), true, "laptop mirrors the monitor")
+eq(root.rects().map(r => r.name), ["HDMI-A-1"], "a mirror takes no room in the layout")
+eq(root.draftSpecs()[0].split("|").slice(-1)[0], "mirror=HDMI-A-1", "a mirror says only that")
+eq(root.setMirror("HDMI-A-1", "eDP-1"), false, "a circle is refused")
+eq(root.mirrorSources("HDMI-A-1"), [], "and not offered")
+eq(root.setMirror("eDP-1", ""), true, "own picture again")
+eq(root.rects().map(r => r.name).sort(), ["HDMI-A-1", "eDP-1"], "back in the layout")
+root.setMirror("eDP-1", "HDMI-A-1")
+root.setOn("HDMI-A-1", false)
+eq([root.item("HDMI-A-1").on, root.item("eDP-1").mirror, root.rects().map(r => r.name)], [false, "", ["eDP-1"]],
+   "the mirrored screen goes off: its mirror shows its own picture again, so a screen stays on")
+
+// keep -> saved into the profile picked, in hyprmon's shape
+root.resetDraft(); root.dirty = false
+root.setScale("HDMI-A-1", "1.25")
+calls.length = 0
+root.apply()
+root.saveTarget = "Desk"
+root.keep()
+eq(calls.filter(c => c[2] === "save").length, 0, "monitors.lua is not written with hyprmon")
+eq(saved.length, 1, "saved once")
+eq(saved[0][0], "Desk", "into the profile picked")
+const mHdmi = saved[0][1].find(m => m.name === "HDMI-A-1")
+eq([mHdmi.hardware_id, mHdmi.alias, mHdmi.Scale, mHdmi.VRR, mHdmi.ColorMode, mHdmi.BitDepth, mHdmi.X, mHdmi.Y],
+   ["Acme/Mon/7", "Big one", 1.25, 2, "hdr", 10, 0, 0], "monitor saved with its id, alias kept, settings")
+eq(saved[0][1].find(m => m.name === "eDP-1").hardware_id, "LG/Panel", "the laptop by its id")
+// no profile picked: the screens stay, nothing saved
+root.setScale("HDMI-A-1", "1")
+root.apply(); root.saveTarget = ""; root.keep()
+eq(saved.length, 1, "nothing saved without a profile")
+root.hyprmon = false
 
 console.log(fails === 0 ? "service simulation: all passed" : fails + " failed")
 process.exit(fails ? 1 : 0)
