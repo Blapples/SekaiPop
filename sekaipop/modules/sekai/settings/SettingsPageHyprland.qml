@@ -631,6 +631,11 @@ SettingsPage {
         // "Keep saves to" was picked by hand (otherwise it follows the profile on now).
         property bool targetPicked: false
         readonly property var pickedProfile: HyprmonService.profile(profilePick)
+        // The screen whose settings are shown (one at a time: the list gets long with
+        // several screens). Falls back to the main screen, then the first.
+        property string screenTab: ""
+        readonly property string shownScreen: DisplayService.names.indexOf(screenTab) >= 0 ? screenTab
+            : (DisplayService.mainName !== "" ? DisplayService.mainName : (DisplayService.names.length > 0 ? DisplayService.names[0] : ""))
 
         SettingChoice {
             visible: HyprmonService.available
@@ -819,6 +824,8 @@ SettingsPage {
         DisplayLayout {
             visible: DisplayService.enabledCount > 1
             width: displayCard.innerWidth
+            selected: DisplayService.names.length > 1 ? displayCard.shownScreen : ""
+            onScreenPicked: name => displayCard.screenTab = name
         }
 
         Text {
@@ -842,6 +849,19 @@ SettingsPage {
             onPicked: id => DisplayService.setMain(id)
         }
 
+        // One tab per screen; its settings below.
+        SettingChoice {
+            visible: DisplayService.names.length > 1
+            label: "Screen"
+            sublabel: "Or click it in the layout"
+            current: displayCard.shownScreen
+            options: DisplayService.names.map(n => {
+                const d = DisplayService.item(n)
+                return { id: n, label: n, icon: !d || !d.on ? "desktop_access_disabled" : (d.mirror ? "screen_share" : "monitor") }
+            })
+            onPicked: id => displayCard.screenTab = id
+        }
+
         Repeater {
             model: DisplayService.names
 
@@ -852,7 +872,7 @@ SettingsPage {
 
                 width: displayCard.innerWidth
                 spacing: 12
-                visible: d !== null
+                visible: d !== null && modelData === displayCard.shownScreen
 
                 Text {
                     width: parent.width
