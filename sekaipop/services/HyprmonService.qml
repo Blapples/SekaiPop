@@ -45,6 +45,13 @@ Singleton {
     property bool busy: false
     // What happened last, for the card ("Switched to Work-3", "Couldn't save ...").
     property string message: ""
+    // The Displays card is in the middle of a change (Apply, then the "keep these?"
+    // countdown): never switch profile under it (DisplayService sets it).
+    property bool held: false
+    // The screens plugged in at the last look (HM.setKey): a switch is only chosen when
+    // they change. Turning a screen off or on sends Hyprland's monitorremoved /
+    // monitoradded too, but plugs nothing in or out.
+    property string lastSetKey: ""
 
     readonly property string script: Directories.script("hyprland/hyprmon.sh")
     readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/sekaipop"
@@ -269,7 +276,10 @@ Singleton {
                 const real = list.filter(m => m.name !== "FALLBACK" && !String(m.name).startsWith("HEADLESS"))
                 const ids = HM.hardwareIds(real.map(m => ({ name: m.name, make: m.make, model: m.model, serial: m.serial })))
                 const connected = real.map(m => ({ name: m.name, hwid: ids[m.name] || "", on: m.disabled !== true }))
-                if (root.afterRead === "choose")
+                const key = HM.setKey(connected)
+                const changed = key !== root.lastSetKey
+                root.lastSetKey = key
+                if (root.afterRead === "choose" && changed)
                     root.choose(connected)
                 else
                     root.guard(connected)
@@ -308,7 +318,7 @@ Singleton {
 
     // Auto-switch: the best profile for these screens, unless it is on already.
     function choose(connected) {
-        if (!root.autoSwitch || connected.length === 0)
+        if (!root.autoSwitch || root.held || connected.length === 0)
             return
         const pick = HM.chooseProfile(root.profiles, connected, root.remembered)
         if (pick === "") {

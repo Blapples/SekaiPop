@@ -232,8 +232,10 @@ root.resetDraft(); root.dirty = false
 root.setScale("HDMI-A-1", "1.25")
 calls.length = 0
 root.apply()
+eq(HyprmonService.held, true, "no auto-switch while the countdown runs")
 root.saveTarget = "Desk"
 root.keep()
+eq(HyprmonService.held, false, "released by Keep")
 eq(calls.filter(c => c[2] === "save").length, 0, "monitors.lua is not written with hyprmon")
 eq(saved.length, 1, "saved once")
 eq(saved[0][0], "Desk", "into the profile picked")
@@ -244,6 +246,8 @@ eq(saved[0][1].find(m => m.name === "eDP-1").hardware_id, "LG/Panel", "the lapto
 // no profile picked: the screens stay, nothing saved
 root.setScale("HDMI-A-1", "1")
 root.apply(); root.saveTarget = ""; root.keep()
+root.setScale("HDMI-A-1", "1.25"); root.apply(); root.revert()
+eq(HyprmonService.held, false, "released by Go back")
 eq(saved.length, 1, "nothing saved without a profile")
 root.hyprmon = false
 

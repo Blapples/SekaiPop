@@ -434,6 +434,7 @@ Singleton {
         if (!root.dirty || root.confirming)
             return
         root.previous = root.liveSpecs()
+        HyprmonService.held = true
         runner.exec(["sh", root.script, "apply"].concat(root.draftSpecs()))
         root.secondsLeft = root.confirmSeconds
         root.confirming = true
@@ -450,6 +451,7 @@ Singleton {
         countdown.stop()
         root.confirming = false
         root.dirty = false
+        HyprmonService.held = false
         if (root.hyprmon) {
             if (HM.validName(root.saveTarget))
                 HyprmonService.saveProfile(root.saveTarget, root.hyprmonMonitors(root.saveTarget))
@@ -467,6 +469,7 @@ Singleton {
         root.confirming = false
         runner.exec(["sh", root.script, "apply"].concat(root.previous))
         root.dirty = false
+        HyprmonService.held = false
         readAgain.restart()
     }
 
