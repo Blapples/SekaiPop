@@ -631,6 +631,19 @@ SettingsPage {
         // "Keep saves to" was picked by hand (otherwise it follows the profile on now).
         property bool targetPicked: false
         readonly property var pickedProfile: HyprmonService.profile(profilePick)
+
+        // A switch (by itself, or Apply) moves the card to the profile that is on now.
+        Connections {
+            target: HyprmonService
+            function onActiveChanged() {
+                if (HyprmonService.active === "")
+                    return
+                displayCard.profilePick = HyprmonService.active
+                displayCard.deleteArmed = ""
+                displayCard.targetPicked = false
+                DisplayService.saveTarget = HyprmonService.active
+            }
+        }
         // The screen whose settings are shown (one at a time: the list gets long with
         // several screens). Falls back to the main screen, then the first.
         property string screenTab: ""
