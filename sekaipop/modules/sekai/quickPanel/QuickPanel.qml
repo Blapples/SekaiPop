@@ -2845,7 +2845,7 @@ Scope {
                         onBrightnessMoved: value => root.source.setBrightness(value)
                         onGammaMoved: value => root.source.setGamma(value)
                         onKeepAwakeToggled: root.source.toggleKeepAwake()
-                        onKeepAwakeModeRequested: m => root.source.setKeepAwake(m)     
+                        onKeepAwakeModeRequested: m => root.source.setKeepAwake(m)
                         onNotificationsToggled: root.source.toggleNotifications()
                         onEditToggled: root.source.toggleEditing()
                         onNightLightToggled: root.source.toggleNightLight()
