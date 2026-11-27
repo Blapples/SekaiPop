@@ -11,6 +11,13 @@ and what was only read through, and how to check it. The short release notes are
 - `RegionSelector.qml`: `shotTaken`, set when grim exits whatever its code, and a `Binding` holding `win.contentItem.opacity` at 0 until then.
 - `tests/region-test/frozen_shot_test.js` (new; fails on `main`): a source check. `qmllint` reports nothing on the file, as on `main`.
 - docs/REGION-PICKER.md (new) is the account.
+## Unreleased — App colours: foot's section names follow its version (issue #158)
+
+**Checked with a real foot** in a throwaway `archlinux` container (foot 1.28.0): `app-theme.sh apply foot` with this change wrote `[colors-dark]` and `[colors-light]`, and `foot --check-config` on the result exited 0. A file with the old `[colors]` failed there with the reporter's exact `[colors]: invalid section name: colors`. **Not run:** a real foot older than 1.26 (that branch writes the same `[colors]` file as before).
+
+- `scripts/theming/app-theme.sh`: `foot_sections` reads `foot --version`; `foot_colors` prints the colour lines once, written under both new sections or under `[colors]`.
+- `tests/app-theme-test/foot_sections_test.sh` (new; 6 of its checks fail on `main`): the real script against a stand-in `foot`, in a throwaway `XDG_CONFIG_HOME`.
+- docs/FOOT-COLOURS.md (new) is the account.
 
 ## Unreleased — Displays: a screen turned off can be turned back on (issue #109)
 
