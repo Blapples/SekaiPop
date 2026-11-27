@@ -4,6 +4,14 @@ The detailed notes written while SekaiPop was built: what each change touched, w
 and what was only read through, and how to check it. The short release notes are in
 `sekaipop/CHANGELOG.md`.
 
+## Unreleased — Screenshots: the picker's dim is never in the frozen picture (issue #160)
+
+**Checked on the live shell** (Quickshell on Hyprland, this desktop's DP-2), with the fixed `RegionSelector.qml` copied into the installed shell and put back afterwards. Not reproduced as it happens to the reporter: in 12 plain runs on `main` the frozen picture matched a `grim` taken just before. A `grim` 50 ms after `ipc call region screenshot` already showed the whole screen dimmed, so the overlay is up that early. With `sleep 0.5` put before `exec grim` in the installed `region-action.sh` (to make grim lose the race on purpose), `main`'s frozen picture held the picker itself: the dim over the bar and the "Esc cancels" hint. With the fix and the same delay, the picture matched the screen from before the picker opened, a `grim` at 0.55 s showed no picker at all, and the picker appeared once grim was done. **Not seen:** the reporter's machine; Escape during the first half second was not pressed by hand (the fix keeps the keyboard by using opacity rather than `visible`).
+
+- `RegionSelector.qml`: `shotTaken`, set when grim exits whatever its code, and a `Binding` holding `win.contentItem.opacity` at 0 until then.
+- `tests/region-test/frozen_shot_test.js` (new; fails on `main`): a source check. `qmllint` reports nothing on the file, as on `main`.
+- docs/REGION-PICKER.md (new) is the account.
+
 ## Unreleased — Displays: a screen turned off can be turned back on (issue #109)
 
 **Reproduced and checked on this desktop's two real monitors** (DP-3 1920x1080@180 and DP-2 2560x1080@75, Hyprland 0.56.2 with a Lua config), running `displays.sh apply` with the same specs the card sends. `main`: DP-2's scale changed 1 -> 1.25 -> 1 live, DP-2 turned off live, and turning it back on left it `disabled: true`; the same rule by hand with `disabled = false` brought it back. With the fix: scale 1.25, off, on, off, on, every step taking. A nested Hyprland was tried first and was not trustworthy (it seemed to keep the first rule for an output and ignore later ones, which the real session doesn't do), so nothing here rests on it. **Not seen:** the reporter's laptop, and what `monitors all` lists for a screen that `monitors.lua` disables from the start (the reporter's "Settings doesn't recognize it anymore" after a reboot); a screen turned off live is listed, so the card can find it.

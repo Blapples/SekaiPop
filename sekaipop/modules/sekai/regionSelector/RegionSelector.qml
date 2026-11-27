@@ -76,9 +76,26 @@ Scope {
         }
         Component.onDestruction: HyprlandData.active = false
 
+        // grim and this window race: the window can be on screen before grim
+        // has taken its picture, and then the dim below is in the frozen
+        // picture, so every crop of it comes out dark (issue #160). Until grim
+        // is done the window draws nothing at all (opacity, not `visible`, so
+        // it keeps the keyboard and Escape still works). When grim fails it
+        // shows anyway, over the live screen, as before.
+        property bool shotTaken: false
+
+        Binding {
+            target: win.contentItem
+            property: "opacity"
+            value: win.shotTaken ? 1 : 0
+        }
+
         Process {
             id: grabber
-            onExited: code => win.shotReady = (code === 0)
+            onExited: code => {
+                win.shotReady = (code === 0)
+                win.shotTaken = true
+            }
         }
 
         // Windows on this monitor's active workspace, in this window's pixels.
