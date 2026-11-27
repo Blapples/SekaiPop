@@ -149,6 +149,7 @@ Singleton {
         "region.audio": "system",       // "record with sound" records: system | mic
         "region.preview": true,         // a preview card (annotate / copy / save) after a Copy or Save
         "region.previewSeconds": 6,     // how long the preview card stays (not while the pointer is on it)
+        "region.recIndicator": "all",   // the red REC pill while the screen is recorded: all (any recorder) | own (the shell's own) | off
         // ===== Bar and tray =====
         "bar.workspaceCount": 5,        // how many workspace badges the bar shows, 1-10
         "bar.scrollHints": true,        // a small marker on modules that react to the scroll wheel

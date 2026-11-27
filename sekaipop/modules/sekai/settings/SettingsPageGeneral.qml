@@ -144,6 +144,18 @@ SettingsPage {
             onPicked: id => SettingsService.set("region.audio", id)
         }
 
+        SettingChoice {
+            label: "Recording indicator"
+            sublabel: "The red REC pill while the screen is recorded"
+            current: SettingsService.get("region.recIndicator")
+            options: [
+                { id: "all", label: "Any recorder", icon: "radio_button_checked" },
+                { id: "own", label: "Only the shell's", icon: "screenshot_region" },
+                { id: "off", label: "Off", icon: "visibility_off" }
+            ]
+            onPicked: id => SettingsService.set("region.recIndicator", id)
+        }
+
         SettingAction {
             icon: "crop_free"
             label: "Pick a region"

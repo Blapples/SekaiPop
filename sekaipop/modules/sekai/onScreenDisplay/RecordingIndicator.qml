@@ -12,6 +12,12 @@ import qs.modules.common.widgets
 // wl-screenrec, gpu-screen-recorder: looked for every 2 s, only `pgrep`). The dot
 // pulses. Clicking the pill stops the recording the way the recorder wants it
 // (SIGINT, which makes wf-recorder finish the file properly).
+//
+// Settings > General > Screen region > Recording indicator (`region.recIndicator`):
+// "all" as above; "own" only for the shell's own recorder, for a recorder that is
+// always running (gpu-screen-recorder's replay buffer keeps the pill up for good);
+// "off" never. Other recorders are only looked for in "all" (issue #166;
+// docs/RECORDING-INDICATOR.md).
 Variants {
     id: root
 
@@ -20,8 +26,14 @@ Variants {
     // so gpu-screen-recorder is "gpu-screen-reco".
     readonly property var recorders: ["wf-recorder", "wl-screenrec", "gpu-screen-reco"]
 
+    // all | own | off (see above)
+    readonly property string mode: SettingsService.get("region.recIndicator") || "all"
+    readonly property bool watchOthers: root.mode === "all"
+
     property bool external: false
-    readonly property bool recording: RegionService.recording || root.external
+    // Whether the pill is up: a recording this setting shows.
+    readonly property bool recording: root.mode !== "off"
+        && (RegionService.recording || (root.watchOthers && root.external))
     // When the current recording started (ms), for the timer on the pill.
     property real since: 0
     property real now: 0
@@ -41,9 +53,10 @@ Variants {
     property Timer pollTimer: Timer {
         interval: 2000
         repeat: true
-        running: true
+        running: root.watchOthers
         triggeredOnStart: true
         onTriggered: root.poll.running = true
+        onRunningChanged: if (!running) root.external = false
     }
 
     property Timer clock: Timer {
@@ -63,7 +76,9 @@ Variants {
     function stop() {
         if (RegionService.recording)
             RegionService.stopRecording()
-        if (root.external)
+        // Only the recorders the pill is showing: with "own", a replay buffer running
+        // beside the shell's recording is left alone.
+        if (root.watchOthers && root.external)
             Quickshell.execDetached(["pkill", "-INT", "-x", root.recorders.join("|")])
     }
 

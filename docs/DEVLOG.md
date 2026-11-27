@@ -25,6 +25,15 @@ and what was only read through, and how to check it. The short release notes are
 - `modules/common/functions/LoadGlyphs.js` (new): `cpu()` is `memory` (the chip), `ram(pct)` the six-step `clock_loader` pie, which `ResourceIndicator.qml` and `ResourcePopup.qml` each stepped themselves before.
 - `tests/resource-test/load_glyphs_test.js` (new; fails on `main`, which has no LoadGlyphs.js): the steps, and both QML files wired the right way round. `qmllint` reports nothing on the two files.
 - docs/RESOURCE-ICONS.md (new) is the account.
+## Unreleased — Recording indicator: any recorder, only the shell's, or off (issue #166)
+
+**Run on a live Quickshell** in a nested Hyprland 0.56.2 (the recipe in docs/DOCK-SMART-HIDE.md: scratch XDG folders, no D-Bus, stand-ins for `pkill`, `systemctl` and friends), the shell from this checkout, with a copy of `sleep` named `wf-recorder` as the "other recorder". The pill's window (`sekaipop-recording` in `hyprctl layers`): none with no recorder; up with the fake recorder on `all`; gone on `own` and on `off` (set with `ipc call options set`); back on `all`; gone again once the recorder ended. The `pkill` stand-in logged only the shell's usual startup cleanups. **Not tried:** one of the shell's own recordings under `own` (it needs a region picked by hand) and clicking the pill; both are in the source check. `grim` gets no frame from the nested session, so nothing was looked at, only the layer list read.
+
+- `services/SettingsService.qml`: `region.recIndicator`, default `all`.
+- `RecordingIndicator.qml`: `mode` / `watchOthers`; `recording` (the pill's condition) leaves out other recorders unless `all`, and everything when `off`; the `pgrep` poll runs only with `all` and forgets its last answer when it stops; `stop()` sends `pkill` only when other recorders are being shown.
+- `SettingsPageGeneral.qml`: the Recording indicator choice under Screen region.
+- `tests/recording-test/indicator_setting_test.js` (new; fails on `main`): a source check. `keys_have_defaults_test.js` passes; `qml-names-test/final_names_test.js` fails as on `main` (`KeybindsPanel.qml`'s `layer`, unrelated). `qmllint` reports nothing on the three files.
+- docs/RECORDING-INDICATOR.md (new) is the account.
 
 ## Unreleased — Displays: a screen turned off can be turned back on (issue #109)
 
