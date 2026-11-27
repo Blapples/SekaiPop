@@ -2,6 +2,7 @@ import QtQuick
 import qs.services
 import qs.modules.common
 import qs.modules.common.widgets
+import "../../common/functions/LoadGlyphs.js" as LG
 
 // The card that drops down from ResourceIndicator.qml, redesigned to sit with
 // the other bar popups (Battery, Weather, Calendar): the shared SekaiPopup
@@ -55,17 +56,6 @@ SekaiPopup {
     readonly property int memTier: root.tierOf(root.memPercent)
     readonly property bool cpuHot: root.cpuTier === 4
     readonly property bool memHot: root.memTier === 4
-
-    // The CPU glyph steps like the bar's (ResourceIndicator.cpuGlyphName).
-    readonly property string cpuGlyph: {
-        var p = root.cpuPercent
-        if (p < 15) return "clock_loader_10"
-        if (p < 30) return "clock_loader_20"
-        if (p < 50) return "clock_loader_40"
-        if (p < 70) return "clock_loader_60"
-        if (p < 85) return "clock_loader_80"
-        return "clock_loader_90"
-    }
 
     function plateTop(tier) {
         return tier <= 1 ? mt.accentMint : Qt.lighter(root.tierFill[tier], 1.16)
@@ -127,7 +117,7 @@ SekaiPopup {
             LoadPlate {
                 width: root.halfW
                 label: "CPU"
-                glyph: root.cpuGlyph
+                glyph: LG.cpu()
                 pct: root.cpuPercent
                 colorTop: root.plateTop(root.cpuTier)
                 colorBottom: root.plateBottom(root.cpuTier)
@@ -137,7 +127,7 @@ SekaiPopup {
             LoadPlate {
                 width: root.halfW
                 label: "RAM"
-                glyph: "memory"
+                glyph: LG.ram(root.memPercent)
                 pct: root.memPercent
                 colorTop: root.plateTop(root.memTier)
                 colorBottom: root.plateBottom(root.memTier)

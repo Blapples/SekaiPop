@@ -18,6 +18,13 @@ and what was only read through, and how to check it. The short release notes are
 - `scripts/theming/app-theme.sh`: `foot_sections` reads `foot --version`; `foot_colors` prints the colour lines once, written under both new sections or under `[colors]`.
 - `tests/app-theme-test/foot_sections_test.sh` (new; 6 of its checks fail on `main`): the real script against a stand-in `foot`, in a throwaway `XDG_CONFIG_HOME`.
 - docs/FOOT-COLOURS.md (new) is the account.
+## Unreleased — Bar: CPU is the chip, RAM the pie (issue #168)
+
+**Seen on the live shell** (this desktop's DP-2), with the three files copied into the installed shell and put back afterwards: on `main` the pill showed the pie beside the CPU figure and the chip beside RAM's; with the change, the chip beside CPU's and the pie (the 60 step, at 59 %) beside RAM's, and nothing about them in the shell's log. **Not seen:** the popup's plates and the standing (left / right) bar on screen; both are covered by the source check.
+
+- `modules/common/functions/LoadGlyphs.js` (new): `cpu()` is `memory` (the chip), `ram(pct)` the six-step `clock_loader` pie, which `ResourceIndicator.qml` and `ResourcePopup.qml` each stepped themselves before.
+- `tests/resource-test/load_glyphs_test.js` (new; fails on `main`, which has no LoadGlyphs.js): the steps, and both QML files wired the right way round. `qmllint` reports nothing on the two files.
+- docs/RESOURCE-ICONS.md (new) is the account.
 
 ## Unreleased — Displays: a screen turned off can be turned back on (issue #109)
 
