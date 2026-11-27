@@ -620,14 +620,19 @@ Scope {
         command: ["wpctl", "set-volume", "@DEFAULT_AUDIO_SOURCE@", Math.round(root.microphoneVolume) + "%"]
         onExited: root.refreshSoon()
     }
+    // "off" | "session" (forgotten at reboot) | "always" (until turned off)
+    property string keepAwakeMode: "off"
+
+    function setKeepAwake(mode) {
+        keepAwakeMode = mode
+        inhibitor.running = mode !== "off"
+        // Only a choice writes this — never the inhibitor exiting — so a
+        // reload can't overwrite it with "off".
+        Quickshell.execDetached(["sh", root.keepAwakeScript, "save", mode])
+    }
 
     function toggleKeepAwake() {
-        const want = !inhibitor.running
-        inhibitor.running = want
-        // Remember the choice so a shell reload can put it back (see the
-        // Keep Awake section below). Only a click writes it — never the
-        // inhibitor exiting — so a reload can't overwrite it with "off".
-        Quickshell.execDetached(["sh", root.keepAwakeScript, "save", want ? "on" : "off"])
+        setKeepAwake(inhibitor.running ? "off" : "session")
     }
 
     function toggleNotifications() {
@@ -1869,8 +1874,11 @@ Scope {
         command: ["sh", root.keepAwakeScript, "restore"]
         stdout: StdioCollector {
             onStreamFinished: {
-                if (text.trim() === "on")
+                const m = text.trim()
+                if (m === "on" || m === "session" || m === "always") {
+                    root.keepAwakeMode = (m === "on") ? "session" : m
                     inhibitor.running = true
+                }
             }
         }
     }
