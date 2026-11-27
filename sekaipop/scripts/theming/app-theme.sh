@@ -25,9 +25,12 @@
 #           open windows. Only `enable kitty` adds the include; apply/sync refresh it.
 #           Revert removes only the include and retains all config/palette files.
 #   foot    ~/.config/foot/sekaipop-colors.ini, `include=` at the TOP of foot.ini
-#           (foot only allows it there, so a [colors] section of your own further
+#           (foot only allows it there, so a colours section of your own further
 #           down still wins: remove it to let ours show). Foot never re-reads its
-#           config, so new windows get the colours, open ones keep theirs.
+#           config, so new windows get the colours, open ones keep theirs. foot
+#           1.26 renamed [colors] to [colors-dark] (and [colors2] to [colors-light])
+#           and later dropped the old names, while older foot knows only the old
+#           ones, so the section names follow `foot --version` (issue #158).
 #   vscode  settings.json of Code / Code - OSS / VSCodium: one block
 #           `/* sekaipop:begin */ "workbench.colorCustomizations": {...}, /* sekaipop:end */`
 #           right after the opening brace; VS Code applies it live. If the file
@@ -136,22 +139,48 @@ block_add_top() {
 # ===== foot =====
 foot_file="$cfg/foot/sekaipop-colors.ini"
 foot_conf="$cfg/foot/foot.ini"
+# The colour sections the installed foot reads: "dark light" for foot 1.26 and
+# later ([colors-dark] and [colors-light], the same colours in both, so the theme
+# shows whichever of the two foot is using), "old" for an older foot ([colors]).
+# No foot on PATH, or a version line that can't be read: the current names.
+foot_sections() {
+    v=$(foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p' | head -n 1)
+    [ -n "$v" ] || { echo "dark light"; return 0; }
+    major=${v% *}; minor=${v#* }
+    if [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 26 ]; }; then
+        echo "dark light"
+    else
+        echo old
+    fi
+}
+foot_colors() {
+    echo "foreground=$(nh "$col_fg")"
+    echo "background=$(nh "$col_bg")"
+    echo "selection-foreground=$(nh "$col_selfg")"
+    echo "selection-background=$(nh "$col_selbg")"
+    echo "cursor=$(nh "$col_bg") $(nh "$col_cursor")"
+    echo "urls=$(nh "$col_accent")"
+    i=0
+    while [ $i -le 7 ]; do eval "echo regular$i=\$(nh \"\$col_c$i\")"; i=$((i + 1)); done
+    i=0
+    while [ $i -le 7 ]; do j=$((i + 8)); eval "echo bright$i=\$(nh \"\$col_c$j\")"; i=$((i + 1)); done
+}
 foot_apply() {
     have foot || [ -d "$cfg/foot" ] || { echo "foot is not installed"; return 3; }
     mkdir -p "$cfg/foot" || return 1
+    sections=$(foot_sections)
     {
         echo "# Written by sekaipop (app-theme.sh). Do not edit: it is rewritten with the theme."
-        echo "[colors]"
-        echo "foreground=$(nh "$col_fg")"
-        echo "background=$(nh "$col_bg")"
-        echo "selection-foreground=$(nh "$col_selfg")"
-        echo "selection-background=$(nh "$col_selbg")"
-        echo "cursor=$(nh "$col_bg") $(nh "$col_cursor")"
-        echo "urls=$(nh "$col_accent")"
-        i=0
-        while [ $i -le 7 ]; do eval "echo regular$i=\$(nh \"\$col_c$i\")"; i=$((i + 1)); done
-        i=0
-        while [ $i -le 7 ]; do j=$((i + 8)); eval "echo bright$i=\$(nh \"\$col_c$j\")"; i=$((i + 1)); done
+        if [ "$sections" = old ]; then
+            echo "[colors]"
+            foot_colors
+        else
+            echo "[colors-dark]"
+            foot_colors
+            echo
+            echo "[colors-light]"
+            foot_colors
+        fi
     } > "$foot_file" || return 1
     block_add_top "$foot_conf" "include=$foot_file" || return 1
     return 0
