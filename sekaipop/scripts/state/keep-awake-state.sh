@@ -21,6 +21,11 @@ sfile="$sdir/keep-awake"
 
 case "$mode" in
     restore)
+        # A reload doesn't restart Quickshell itself, so an inhibitor from
+        # the previous load can still be alive while the new load thinks
+        # Keep Awake is off. Kill it; QuickSource starts a fresh one if
+        # the saved mode says so. ([e] keeps this pattern from matching
+        # a command line that merely contains the pattern's own text.)
         pkill -f 'sekaipop-keep-awak[e]' 2>/dev/null
         if [ -f "$rfile" ]; then
             cat "$rfile"
