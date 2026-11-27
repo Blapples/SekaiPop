@@ -42,6 +42,23 @@ try {
     // bad specs are still refused before anything runs
     const bad = spawnSync("sh", [script, "apply", "DP-2|on|preferred|0|0|1); os.exit()"], { env: Object.assign({}, process.env, { PATH: bin + ":" + process.env.PATH }), encoding: "utf8" })
     assert.strictEqual(bad.status, 2)
+
+    // the 7th field (hyprmon display handler): more settings, turned into hl.monitor fields
+    const more = run("DP-4|on|5120x1440@240.00|0|0|1.33|transform=1,vrr=2,bitdepth=10,cm=hdr,sdrbrightness=1.20,sdrsaturation=0.90",
+                     "DP-3|on|1920x1080@60.00|0|0|1|mirror=DP-4", "eDP-1|on|preferred|0|0|1|")
+    assert.deepStrictEqual(more, [
+        'hl.monitor({ output = "DP-4", mode = "5120x1440@240.00", position = "0x0", scale = 1.33, disabled = false, transform = 1, vrr = 2, bitdepth = 10, cm = "hdr", sdrbrightness = 1.20, sdrsaturation = 0.90 })',
+        'hl.monitor({ output = "DP-3", mode = "1920x1080@60.00", position = "0x0", scale = 1, disabled = false, mirror = "DP-4" })',
+        'hl.monitor({ output = "eDP-1", mode = "preferred", position = "0x0", scale = 1, disabled = false })'
+    ])
+    // ...and every one of them is checked: nothing runs on a bad one
+    for (const extra of ["transform=8", "vrr=3", "bitdepth=12", "cm=neon", "sdrbrightness=1.2.3", "sdrbrightness=.5",
+                         "mirror=DP-1\"", "mirror=", "rotate=1", "transform", "cm=hdr); os.exit("]) {
+        fs.rmSync(log, { force: true })
+        const r = spawnSync("sh", [script, "apply", "DP-2|on|preferred|0|0|1|" + extra], { env: Object.assign({}, process.env, { PATH: bin + ":" + process.env.PATH }), encoding: "utf8" })
+        assert.strictEqual(r.status, 2, "accepted a bad extra: " + extra)
+        assert.ok(!fs.existsSync(log), "ran hyprctl for a bad extra: " + extra)
+    }
 } finally {
     fs.rmSync(tmp, { recursive: true, force: true })
 }

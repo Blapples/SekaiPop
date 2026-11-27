@@ -109,7 +109,15 @@ SettingsPage {
         repeat: true
         running: page.visible
         triggeredOnStart: true
-        onTriggered: DisplayService.refresh()
+        onTriggered: {
+            DisplayService.refresh()
+            HyprmonService.refresh()
+            // "Keep saves to" follows the profile that is on, until you pick one yourself.
+            if (!displayCard.targetPicked && HyprmonService.current !== "")
+                DisplayService.saveTarget = HyprmonService.current
+            if (displayCard.profilePick === "" && HyprmonService.current !== "")
+                displayCard.profilePick = HyprmonService.current
+        }
     }
 
     Component.onCompleted: nwgCheck.running = true
@@ -616,6 +624,194 @@ SettingsPage {
         title: "Displays"
         icon: "monitor"
 
+        // hyprmon: the profile the buttons below act on, and a delete waiting for its
+        // second click.
+        property string profilePick: ""
+        property string deleteArmed: ""
+        // "Keep saves to" was picked by hand (otherwise it follows the profile on now).
+        property bool targetPicked: false
+        readonly property var pickedProfile: HyprmonService.profile(profilePick)
+
+        // A switch (by itself, or Apply) moves the card to the profile that is on now.
+        Connections {
+            target: HyprmonService
+            function onCurrentChanged() {
+                if (HyprmonService.current === "")
+                    return
+                displayCard.profilePick = HyprmonService.current
+                displayCard.deleteArmed = ""
+                displayCard.targetPicked = false
+                DisplayService.saveTarget = HyprmonService.current
+            }
+        }
+        // The screen whose settings are shown (one at a time: the list gets long with
+        // several screens). Falls back to the main screen, then the first.
+        property string screenTab: ""
+        readonly property string shownScreen: DisplayService.names.indexOf(screenTab) >= 0 ? screenTab
+            : (DisplayService.mainName !== "" ? DisplayService.mainName : (DisplayService.names.length > 0 ? DisplayService.names[0] : ""))
+
+        SettingChoice {
+            visible: HyprmonService.available
+            label: "Display handler"
+            sublabel: "Who keeps your screens"
+            current: DisplayService.hyprmon ? "hyprmon" : "sekaipop"
+            options: [
+                { id: "sekaipop", label: "SekaiPop", icon: "monitor" },
+                { id: "hyprmon", label: "hyprmon", icon: "view_quilt" }
+            ]
+            onPicked: id => {
+                if (DisplayService.confirming)
+                    return
+                DisplayService.discard()
+                SettingsService.set("display.handler", id)
+            }
+        }
+
+        Text {
+            visible: DisplayService.hyprmon
+            width: displayCard.innerWidth
+            wrapMode: Text.WordWrap
+            text: "Your screens are kept as hyprmon profiles (~/.config/hyprmon). Keep saves into the profile picked under \"Keep saves to\", and hyprmon writes it to hyprmon.lua; monitors.lua is left alone."
+            color: mt.pInkSub
+            font.family: mt.fontFamily
+            font.pixelSize: 16
+        }
+
+        // ----- hyprmon profiles -----
+        SettingChoice {
+            visible: DisplayService.hyprmon && HyprmonService.profiles.length > 0
+            label: "Profile"
+            sublabel: HyprmonService.current !== "" ? HyprmonService.current + " is on now" : "None matches the screens exactly"
+            current: displayCard.profilePick
+            options: HyprmonService.profiles.map(p => ({ id: p.name, label: p.name, icon: p.name === HyprmonService.current ? "check_circle" : "view_quilt" }))
+            onPicked: id => {
+                displayCard.profilePick = id
+                displayCard.deleteArmed = ""
+            }
+        }
+
+        Text {
+            visible: DisplayService.hyprmon && displayCard.pickedProfile !== null
+            width: displayCard.innerWidth
+            wrapMode: Text.WordWrap
+            text: displayCard.pickedProfile ? HyprmonService.summary(displayCard.profilePick) : ""
+            color: mt.pInkSub
+            font.family: mt.fontFamily
+            font.pixelSize: 15
+        }
+
+        Flow {
+            visible: DisplayService.hyprmon && displayCard.pickedProfile !== null
+            width: displayCard.innerWidth
+            spacing: 10
+            property real tileWidth: 230
+
+            SettingAction {
+                icon: "play_arrow"
+                label: "Apply"
+                detail: displayCard.profilePick === HyprmonService.current ? "It is on now" : "Put these screens on"
+                busy: HyprmonService.busy
+                onActivated: if (!DisplayService.confirming) { DisplayService.discard(); HyprmonService.apply(displayCard.profilePick, "hand") }
+            }
+
+            SettingAction {
+                icon: "arrow_upward"
+                label: "Earlier"
+                detail: "In the order (wins ties)"
+                onActivated: HyprmonService.move(displayCard.profilePick, -1)
+            }
+
+            SettingAction {
+                icon: "arrow_downward"
+                label: "Later"
+                detail: "In the order"
+                onActivated: HyprmonService.move(displayCard.profilePick, 1)
+            }
+
+            SettingAction {
+                icon: "delete"
+                label: displayCard.deleteArmed === displayCard.profilePick ? "Sure?" : "Delete"
+                detail: displayCard.deleteArmed === displayCard.profilePick ? "Click again to delete" : "A copy is kept"
+                busy: displayCard.deleteArmed === displayCard.profilePick
+                onActivated: {
+                    if (displayCard.deleteArmed !== displayCard.profilePick) {
+                        displayCard.deleteArmed = displayCard.profilePick
+                        return
+                    }
+                    HyprmonService.remove(displayCard.profilePick)
+                    displayCard.deleteArmed = ""
+                    displayCard.profilePick = ""
+                }
+            }
+        }
+
+        SettingText {
+            visible: DisplayService.hyprmon && displayCard.pickedProfile !== null
+            label: "Rename"
+            sublabel: "Letters, digits, space, _ . -"
+            value: displayCard.profilePick
+            clearable: false
+            onSubmitted: text => {
+                const t = text.trim()
+                if (t === "" || t === displayCard.profilePick)
+                    return
+                HyprmonService.rename(displayCard.profilePick, t)
+                displayCard.profilePick = t
+            }
+        }
+
+        SettingText {
+            visible: DisplayService.hyprmon
+            label: "Save screens as"
+            sublabel: DisplayService.dirty || DisplayService.confirming ? "Apply or undo your changes first" : "The screens as they are now"
+            value: ""
+            placeholder: "a new profile's name, Enter"
+            clearable: false
+            onSubmitted: text => {
+                const t = text.trim()
+                if (t === "" || DisplayService.dirty || DisplayService.confirming)
+                    return
+                if (HyprmonService.saveProfile(t, DisplayService.hyprmonMonitors(t))) {
+                    displayCard.profilePick = t
+                    DisplayService.saveTarget = t
+                    displayCard.targetPicked = true
+                }
+            }
+        }
+
+        SettingToggle {
+            visible: DisplayService.hyprmon
+            icon: "autorenew"
+            label: "Switch by itself"
+            detail: SettingsService.flag("display.hyprmonAuto") ? "When screens come and go" : "OFF"
+            checked: SettingsService.flag("display.hyprmonAuto")
+            onToggled: SettingsService.set("display.hyprmonAuto", !SettingsService.flag("display.hyprmonAuto"))
+        }
+
+        SettingChoice {
+            visible: DisplayService.hyprmon
+            label: "Keep saves to"
+            sublabel: "Where Keep puts your changes"
+            current: DisplayService.saveTarget
+            options: [{ id: "", label: "Nowhere (this session)", icon: "timer" }]
+                .concat(HyprmonService.profiles.map(p => ({ id: p.name, label: p.name, icon: "save" })))
+            onPicked: id => {
+                DisplayService.saveTarget = id
+                displayCard.targetPicked = true
+            }
+        }
+
+        Text {
+            visible: DisplayService.hyprmon && HyprmonService.message !== ""
+            width: displayCard.innerWidth
+            wrapMode: Text.WordWrap
+            text: HyprmonService.message
+            color: mt.pInk
+            font.family: mt.fontFamily
+            font.pixelSize: 15
+            font.weight: Font.ExtraBold
+        }
+
         Text {
             width: displayCard.innerWidth
             wrapMode: Text.WordWrap
@@ -641,6 +837,8 @@ SettingsPage {
         DisplayLayout {
             visible: DisplayService.enabledCount > 1
             width: displayCard.innerWidth
+            selected: DisplayService.names.length > 1 ? displayCard.shownScreen : ""
+            onScreenPicked: name => displayCard.screenTab = name
         }
 
         Text {
@@ -664,6 +862,19 @@ SettingsPage {
             onPicked: id => DisplayService.setMain(id)
         }
 
+        // One tab per screen; its settings below.
+        SettingChoice {
+            visible: DisplayService.names.length > 1
+            label: "Screen"
+            sublabel: "Or click it in the layout"
+            current: displayCard.shownScreen
+            options: DisplayService.names.map(n => {
+                const d = DisplayService.item(n)
+                return { id: n, label: n, icon: !d || !d.on ? "desktop_access_disabled" : (d.mirror ? "screen_share" : "monitor") }
+            })
+            onPicked: id => displayCard.screenTab = id
+        }
+
         Repeater {
             model: DisplayService.names
 
@@ -674,7 +885,7 @@ SettingsPage {
 
                 width: displayCard.innerWidth
                 spacing: 12
-                visible: d !== null
+                visible: d !== null && modelData === displayCard.shownScreen
 
                 Text {
                     width: parent.width
@@ -729,7 +940,7 @@ SettingsPage {
                 }
 
                 SettingChoice {
-                    visible: scr.d !== null && scr.d.on && scr.modelData !== DisplayService.mainName
+                    visible: scr.d !== null && scr.d.on && !scr.d.mirror && scr.modelData !== DisplayService.mainName
                     label: "Placed"
                     sublabel: "Jump next to " + DisplayService.mainName
                     current: scr.d ? scr.d.place : ""
@@ -740,6 +951,99 @@ SettingsPage {
                         { id: "below", label: "Below", icon: "south" }
                     ]
                     onPicked: id => DisplayService.setPlace(scr.modelData, id)
+                }
+
+                // ----- hyprmon's settings -----
+                SettingChoice {
+                    visible: DisplayService.hyprmon && scr.d !== null && scr.d.on && DisplayService.enabledCount > 1
+                    label: "Mirror"
+                    sublabel: "Show another screen's picture"
+                    current: scr.d ? scr.d.mirror : ""
+                    options: [{ id: "", label: "Off", icon: "block" }]
+                        .concat(DisplayService.mirrorSources(scr.modelData).map(n => ({ id: n, label: n, icon: "screen_share" })))
+                    onPicked: id => DisplayService.setMirror(scr.modelData, id)
+                }
+
+                SettingChoice {
+                    visible: DisplayService.hyprmon && scr.d !== null && scr.d.on && !scr.d.mirror
+                    label: "Rotation"
+                    current: scr.d ? String(scr.d.transform) : "0"
+                    options: [
+                        { id: "0", label: "Normal", icon: "crop_landscape" },
+                        { id: "1", label: "90\u00b0", icon: "rotate_90_degrees_cw" },
+                        { id: "2", label: "180\u00b0", icon: "sync" },
+                        { id: "3", label: "270\u00b0", icon: "rotate_90_degrees_ccw" },
+                        { id: "4", label: "Flipped", icon: "flip" },
+                        { id: "5", label: "Flipped 90\u00b0", icon: "flip" },
+                        { id: "6", label: "Flipped 180\u00b0", icon: "flip" },
+                        { id: "7", label: "Flipped 270\u00b0", icon: "flip" }
+                    ]
+                    onPicked: id => DisplayService.setTransform(scr.modelData, id)
+                }
+
+                SettingChoice {
+                    visible: DisplayService.hyprmon && scr.d !== null && scr.d.on && !scr.d.mirror
+                    label: "Variable refresh"
+                    current: scr.d ? String(scr.d.vrr) : "0"
+                    options: [
+                        { id: "0", label: "Off", icon: "block" },
+                        { id: "1", label: "On", icon: "speed" },
+                        { id: "2", label: "Fullscreen only", icon: "fullscreen" }
+                    ]
+                    onPicked: id => DisplayService.setVrr(scr.modelData, id)
+                }
+
+                SettingChoice {
+                    visible: DisplayService.hyprmon && scr.d !== null && scr.d.on && !scr.d.mirror
+                    label: "Colour depth"
+                    current: scr.d ? String(scr.d.bitDepth) : "8"
+                    options: [
+                        { id: "8", label: "8-bit", icon: "palette" },
+                        { id: "10", label: "10-bit", icon: "gradient" }
+                    ]
+                    onPicked: id => DisplayService.setBitDepth(scr.modelData, id)
+                }
+
+                SettingChoice {
+                    visible: DisplayService.hyprmon && scr.d !== null && scr.d.on && !scr.d.mirror
+                    label: "Colour"
+                    sublabel: "HDR needs a screen that has it"
+                    current: scr.d ? scr.d.cm : "srgb"
+                    options: [
+                        { id: "auto", label: "Auto", icon: "auto_awesome" },
+                        { id: "srgb", label: "sRGB", icon: "palette" },
+                        { id: "wide", label: "Wide", icon: "panorama_wide_angle" },
+                        { id: "edid", label: "EDID", icon: "memory" },
+                        { id: "hdr", label: "HDR", icon: "hdr_on" },
+                        { id: "hdredid", label: "HDR (EDID)", icon: "hdr_auto" }
+                    ]
+                    onPicked: id => DisplayService.setColorMode(scr.modelData, id)
+                }
+
+                SettingSlider {
+                    visible: DisplayService.hyprmon && scr.d !== null && scr.d.on && !scr.d.mirror && (scr.d.cm === "hdr" || scr.d.cm === "hdredid")
+                    width: page.halfWidth
+                    icon: "brightness_6"
+                    label: "SDR brightness"
+                    from: 0.5
+                    to: 2
+                    step: 0.05
+                    decimals: 2
+                    value: scr.d ? scr.d.sdrBrightness : 1
+                    onMoved: v => DisplayService.setSdr(scr.modelData, "brightness", v)
+                }
+
+                SettingSlider {
+                    visible: DisplayService.hyprmon && scr.d !== null && scr.d.on && !scr.d.mirror && (scr.d.cm === "hdr" || scr.d.cm === "hdredid")
+                    width: page.halfWidth
+                    icon: "invert_colors"
+                    label: "SDR saturation"
+                    from: 0.5
+                    to: 2
+                    step: 0.05
+                    decimals: 2
+                    value: scr.d ? scr.d.sdrSaturation : 1
+                    onMoved: v => DisplayService.setSdr(scr.modelData, "saturation", v)
                 }
             }
         }
@@ -764,7 +1068,8 @@ SettingsPage {
             visible: DisplayService.confirming
             icon: "check_circle"
             label: "Keep"
-            detail: "Save these screens"
+            detail: !DisplayService.hyprmon ? "Save these screens"
+                    : (DisplayService.saveTarget !== "" ? "Save to " + DisplayService.saveTarget : "For this session only")
             busy: true
             onActivated: DisplayService.keep()
         }

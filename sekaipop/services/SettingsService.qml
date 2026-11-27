@@ -284,7 +284,13 @@ Singleton {
         "hooks.wallpaper": "",
         "hooks.lockWallpaper": "",
         "hooks.theme": "",
-        "hooks.lock": ""
+        "hooks.lock": "",
+        // ===== Displays (Settings > Hyprland > Displays) =====
+        // Who keeps the monitor setup: "sekaipop" (the card writes ~/.config/hypr/monitors.lua)
+        // or "hyprmon" (profiles kept by hyprmon, written to hyprmon.lua; HyprmonService.qml).
+        "display.handler": "sekaipop",
+        // With hyprmon: switch profile by itself when screens are plugged in or out.
+        "display.hyprmonAuto": true
     })
 
     // What has been changed from the defaults.

@@ -13,6 +13,10 @@ import "../../common/functions/DisplayMath.js" as DM
 //   DisplayLayout { width: card.innerWidth }
 Item {
     id: root
+    // The screen whose settings the card shows (drawn with a thicker outline), and a
+    // click on a screen to pick it.
+    property string selected: ""
+    signal screenPicked(string name)
 
     // This monitor's theme: Theme.of() gives the shell's own unless the monitor has one.
     readonly property var mt: Theme.of(QsWindow.window)
@@ -87,7 +91,7 @@ Item {
                 anchors.fill: parent
                 radius: 12
                 antialiasing: true
-                border.width: mt.borderWidth
+                border.width: tile.r.name === root.selected ? mt.borderWidth * 2 + 1 : mt.borderWidth
                 border.color: mt.pLine
                 gradient: tile.isMain ? mainFill : null
                 color: tile.isMain ? mt.accentCyan : (area.containsMouse || tile.dragging ? mt.pSurfaceHover : mt.pSurface)
@@ -146,6 +150,7 @@ Item {
                 }
 
                 onPressed: mouse => {
+                    root.screenPicked(tile.r.name)
                     const p = mapToItem(root, mouse.x, mouse.y)
                     sx = p.x
                     sy = p.y

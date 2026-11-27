@@ -6,6 +6,8 @@
 #   displays.sh save  <spec>...     write ~/.config/hypr/monitors.lua
 #
 # <spec> is  name|on|mode|x|y|scale   (mode like 1920x1080@144.00, or "preferred")
+#         or name|on|mode|x|y|scale|<more>  (apply only: rotation, VRR, colour, mirror;
+#                                            see extra_fields below)
 #         or name|off            (or name|off|x|y: where to park it, see below)
 #
 # monitors.lua is the file nwg-displays writes and hyprland.lua loads, and this
@@ -16,6 +18,38 @@
 
 dir="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
 file="$dir/monitors.lua"
+
+# The 7th field of an "on" spec (optional): more settings, comma separated, each
+# key=value, checked one by one and turned into hl.monitor fields (the hyprmon display
+# handler sends them; without it nothing changes):
+#   transform=0..7  vrr=0..2  bitdepth=8|10  cm=auto|srgb|wide|edid|hdr|hdredid
+#   sdrbrightness=<n.nn>  sdrsaturation=<n.nn>  mirror=<screen>
+# -> ", transform = 1, cm = \"hdr\"" (empty when there are none); 1 for anything else.
+extra_fields() {
+    out=""
+    old_ifs=$IFS
+    IFS=','
+    for kv in $1; do
+        IFS=$old_ifs
+        k=${kv%%=*}; v=${kv#*=}
+        [ "$k" != "$kv" ] || return 1
+        case "$k" in
+            transform) case "$v" in [0-7]) out="$out, transform = $v" ;; *) return 1 ;; esac ;;
+            vrr) case "$v" in [0-2]) out="$out, vrr = $v" ;; *) return 1 ;; esac ;;
+            bitdepth) case "$v" in 8|10) out="$out, bitdepth = $v" ;; *) return 1 ;; esac ;;
+            cm) case "$v" in auto|srgb|wide|edid|hdr|hdredid) out="$out, cm = \"$v\"" ;; *) return 1 ;; esac ;;
+            sdrbrightness|sdrsaturation)
+                case "$v" in ''|.*|*.|*[!0-9.]*|*.*.*) return 1 ;; esac
+                out="$out, $k = $v" ;;
+            mirror) valid_name "$v" || return 1; out="$out, mirror = \"$v\"" ;;
+            *) return 1 ;;
+        esac
+        IFS=','
+    done
+    IFS=$old_ifs
+    printf '%s' "$out"
+    return 0
+}
 
 # name mode x y scale -> ok (0) or not (1)
 valid_on() {
@@ -69,17 +103,18 @@ case "$1" in
         # Screens that come on first, then the ones that go off: never none.
         for pass in on off; do
             for spec in "$@"; do
-                IFS='|' read -r name state mode x y scale <<EOF2
+                IFS='|' read -r name state mode x y scale more <<EOF2
 $spec
 EOF2
                 [ "$state" = "$pass" ] || continue
                 if [ "$state" = on ]; then
                     valid_on "$name" "$mode" "$x" "$y" "$scale" || { echo "bad spec: $spec" >&2; exit 2; }
+                    fields=$(extra_fields "$more") || { echo "bad spec: $spec" >&2; exit 2; }
                     # `disabled = false` said outright: a rule without it leaves a screen
                     # turned off earlier in the session off (Hyprland 0.56; issue #109), and
                     # the countdown's revert, which re-applies the old screens, could not
                     # bring one back either.
-                    hyprctl eval "hl.monitor({ output = \"$name\", mode = \"$mode\", position = \"${x}x${y}\", scale = $scale, disabled = false })" >/dev/null 2>&1
+                    hyprctl eval "hl.monitor({ output = \"$name\", mode = \"$mode\", position = \"${x}x${y}\", scale = $scale, disabled = false$fields })" >/dev/null 2>&1
                 else
                     valid_name "$name" || { echo "bad spec: $spec" >&2; exit 2; }
                     hyprctl eval "hl.monitor({ output = \"$name\", disabled = true })" >/dev/null 2>&1
