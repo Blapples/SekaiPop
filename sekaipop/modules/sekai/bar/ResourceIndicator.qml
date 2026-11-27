@@ -3,6 +3,7 @@ import Quickshell
 import QtQuick.Layouts
 import qs.modules.common
 import qs.modules.common.widgets
+import "../../common/functions/LoadGlyphs.js" as LG
 
 // Pure UI (no Quickshell imports): Status_Bar.qml feeds this the two
 // numbers from ResourceSource.qml. Two small badges — CPU and RAM,
@@ -37,23 +38,9 @@ Item {
     readonly property bool cpuHot: cpuPercent >= 90
     readonly property bool memHot: memPercent >= 90
 
-    // CPU glyph: Material Symbols Rounded only ships the "clock_loader"
-    // pie-timer glyph in these six steps, so cpuPercent snaps to
-    // whichever is closest (midpoints at 15/30/50/70/85) rather than
-    // an even split like Battery's frame_1..frame_6.
-    readonly property string cpuGlyphName: {
-        var p = root.cpuPercent
-        if (p < 15) return "clock_loader_10"
-        if (p < 30) return "clock_loader_20"
-        if (p < 50) return "clock_loader_40"
-        if (p < 70) return "clock_loader_60"
-        if (p < 85) return "clock_loader_80"
-        return "clock_loader_90"
-    }
-
-    // RAM has no percent-stepped glyph in the set, so it's the one
-    // fixed "memory" icon regardless of memPercent.
-    readonly property string memGlyphName: "memory"
+    // CPU is the chip, RAM the pie that fills with it (LoadGlyphs.js, issue #168).
+    readonly property string cpuGlyphName: LG.cpu()
+    readonly property string memGlyphName: LG.ram(root.memPercent)
 
     implicitWidth: pill.implicitWidth
     implicitHeight: pill.implicitHeight
